@@ -33,13 +33,13 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        run: flutter build apk --release --build-name=${{ github.run_number }} --build-number=${{ github.run_number }}
 
       - name: Prepare release info
         id: info
         run: |
-          version=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*//; s/\+.*//')
-          tag="v${version}-build${{ github.run_number }}"
+          # Versions are plain incrementing integers: the workflow run number.
+          tag="${{ github.run_number }}"
           cp build/app/outputs/flutter-apk/app-release.apk "roll-the-dice-${tag}.apk"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "apk=roll-the-dice-${tag}.apk" >> "$GITHUB_OUTPUT"
