@@ -236,54 +236,41 @@ void main() {
     expect(find.byType(Die), findsNWidgets(7));
   });
 
-  testWidgets('"Sum of 2" to "Sum of 5" show only the total in a circle', (
+  testWidgets('"Sum of dice" is off by default; on, a circle shows the total', (
     tester,
   ) async {
-    // Tall enough for the whole menu to show without scrolling.
-    tester.view.physicalSize = const Size(800, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final settings = await loadSettings();
+    final settings = await loadSettings({'diceCount': 3});
     await tester.pumpWidget(
       RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
     );
+    expect(find.byKey(const Key('sumCircle')), findsNothing);
+
     await tester.tap(find.byKey(const Key('settingsButton')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('diceCountField')));
-    await tester.pumpAndSettle();
-    for (var n = 2; n <= 5; n++) {
-      expect(find.text('Sum of $n'), findsWidgets);
-    }
-    expect(find.text('Sum of 1'), findsNothing);
-    expect(find.text('Sum of 6'), findsNothing);
-    await tester.tap(find.text('Sum of 3').last);
-    await tester.pumpAndSettle();
-    expect(settings.diceCount, 3);
+    expect(find.text('Sum of dice'), findsOneWidget);
+    final sumSwitch = find.byKey(const Key('showSumSwitch'));
+    expect(tester.widget<SwitchListTile>(sumSwitch).value, isFalse);
+    await tester.tap(sumSwitch);
+    await tester.pump();
     expect(settings.showSum, isTrue);
-    final reloaded = await AppSettings.load();
-    expect((reloaded.diceCount, reloaded.showSum), (3, true));
+    expect((await AppSettings.load()).showSum, isTrue);
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byType(Die), findsNothing);
+    expect(find.byType(Die), findsNWidgets(3));
     final circle = tester.getRect(find.byKey(const Key('sumCircle')));
     expect(circle.width, moreOrLessEquals(circle.height));
-    final totals = <int>{};
-    for (var i = 0; i < 30; i++) {
-      await tester.tapAt(const Offset(10, 400));
+    for (var i = 0; i < 3; i++) {
+      final die = tester.getRect(find.byKey(Key('die$i')));
+      expect(circle.top, greaterThanOrEqualTo(die.bottom), reason: 'below');
+    }
+    for (var roll = 0; roll < 10; roll++) {
+      await tester.tapAt(const Offset(10, 300));
       await tester.pumpAndSettle();
       final text = tester.widget<Text>(find.byKey(const Key('sumText')));
-      totals.add(int.parse(text.data!));
+      final dice = [for (var i = 0; i < 3; i++) pipsIn(tester, 'die$i')];
+      expect(int.parse(text.data!), dice.reduce((a, b) => a + b));
     }
-    expect(totals, everyElement(inInclusiveRange(3, 18)));
-    expect(totals.length, greaterThan(5));
-  });
-
-  testWidgets('a stored sum of more than 5 dice falls back to plain dice', (
-    tester,
-  ) async {
-    final s = await loadSettings({'diceCount': 8, 'showSum': true});
-    expect((s.diceCount, s.showSum), (8, false));
   });
 
   testWidgets('ignores a stored number of dice outside 1 to 9', (tester) async {
@@ -291,8 +278,16 @@ void main() {
     expect((await loadSettings({'diceCount': 10})).diceCount, 2);
   });
 
-  int countOf(WidgetTester tester, int value) =>
-      int.parse(tester.widget<Text>(find.byKey(Key('count$value'))).data!);
+  int countOf(WidgetTester tester, String histogram, int value) => int.parse(
+    tester
+        .widget<Text>(
+          find.descendant(
+            of: find.byKey(Key(histogram)),
+            matching: find.byKey(Key('count$value')),
+          ),
+        )
+        .data!,
+  );
 
   testWidgets('stats are off by default; the switch shows and persists them', (
     tester,
@@ -311,13 +306,15 @@ void main() {
     expect((await AppSettings.load()).showStats, isTrue);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('histogram')), findsOneWidget);
+    expect(find.byKey(const Key('faceHistogram')), findsOneWidget);
+    // The per-total histogram only shows with "Sum of dice".
+    expect(find.byKey(const Key('sumHistogram')), findsNothing);
     for (var v = 1; v <= 6; v++) {
-      expect(countOf(tester, v), 0);
+      expect(countOf(tester, 'faceHistogram', v), 0);
     }
   });
 
-  testWidgets('plain dice: one bucket per face, every die counts', (
+  testWidgets('face histogram: one bucket per face, every die counts', (
     tester,
   ) async {
     final settings = await loadSettings({'showStats': true, 'diceCount': 3});
@@ -330,16 +327,22 @@ void main() {
       await tester.tapAt(const Offset(400, 200));
       await tester.pumpAndSettle();
     }
-    expect(settings.statCounts.length, 6);
-    expect(settings.statCounts.fold(0, (a, b) => a + b), 30);
+    expect(settings.faceCounts.length, 6);
+    expect(settings.faceCounts.fold(0, (a, b) => a + b), 30);
     for (var v = 1; v <= 6; v++) {
-      expect(countOf(tester, v), settings.statCounts[v - 1]);
+      expect(countOf(tester, 'faceHistogram', v), settings.faceCounts[v - 1]);
     }
+    // Totals are counted too, ready for when the sum is switched on.
+    expect(settings.sumCounts.fold(0, (a, b) => a + b), 10);
     // The counts survive a reload.
-    expect((await AppSettings.load()).statCounts, settings.statCounts);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.faceCounts, settings.faceCounts);
+    expect(reloaded.sumCounts, settings.sumCounts);
   });
 
-  testWidgets('sum mode: one bucket per possible total', (tester) async {
+  testWidgets('with the sum on, a second histogram has one bucket per total', (
+    tester,
+  ) async {
     final settings = await loadSettings({
       'showStats': true,
       'diceCount': 2,
@@ -350,72 +353,81 @@ void main() {
         home: DicePage(random: Random(3), settings: settings),
       ),
     );
-    expect(settings.statCounts.length, 11);
-    expect(find.byKey(const Key('count2')), findsOneWidget);
-    expect(find.byKey(const Key('count12')), findsOneWidget);
-    expect(find.byKey(const Key('count1')), findsNothing);
-    expect(find.byKey(const Key('count13')), findsNothing);
-    await tester.tapAt(const Offset(400, 200));
+    expect(find.byKey(const Key('faceHistogram')), findsOneWidget);
+    expect(settings.sumCounts.length, 11);
+    Finder sumBucket(int v) => find.descendant(
+      of: find.byKey(const Key('sumHistogram')),
+      matching: find.byKey(Key('count$v')),
+    );
+    expect(sumBucket(2), findsOneWidget);
+    expect(sumBucket(12), findsOneWidget);
+    expect(sumBucket(1), findsNothing);
+    expect(sumBucket(13), findsNothing);
+    await tester.tapAt(const Offset(400, 100));
     await tester.pumpAndSettle();
     final total = int.parse(
       tester.widget<Text>(find.byKey(const Key('sumText'))).data!,
     );
-    expect(countOf(tester, total), 1);
-    expect(settings.statCounts.fold(0, (a, b) => a + b), 1);
+    expect(countOf(tester, 'sumHistogram', total), 1);
+    expect(settings.sumCounts.fold(0, (a, b) => a + b), 1);
+    expect(settings.faceCounts.fold(0, (a, b) => a + b), 2);
   });
 
-  testWidgets('tapping the histogram asks to reset instead of rolling', (
+  testWidgets('tapping the histograms asks to reset instead of rolling', (
     tester,
   ) async {
     final settings = await loadSettings({
       'showStats': true,
-      'statCounts': ['1', '2', '3', '4', '5', '6'],
+      'showSum': true,
+      'statFaceCounts': ['1', '2', '3', '4', '5', '6'],
+      'statSumCounts': [for (var i = 0; i < 11; i++) '1'],
     });
     await tester.pumpWidget(
       MaterialApp(
         home: DicePage(random: Random(1), settings: settings),
       ),
     );
-    expect(countOf(tester, 6), 6);
+    expect(countOf(tester, 'faceHistogram', 6), 6);
 
-    await tester.tap(find.byKey(const Key('histogram')));
+    await tester.tap(find.byKey(const Key('sumHistogram')));
     await tester.pumpAndSettle();
     expect(find.text('Reset histogram?'), findsOneWidget);
     await tester.tap(find.byKey(const Key('resetNo')));
     await tester.pumpAndSettle();
     // No roll happened and nothing was reset.
-    expect(settings.statCounts, [1, 2, 3, 4, 5, 6]);
+    expect(settings.faceCounts, [1, 2, 3, 4, 5, 6]);
+    expect(settings.sumCounts, List.filled(11, 1));
 
     await tester.tap(find.byKey(const Key('histogram')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('resetYes')));
     await tester.pumpAndSettle();
-    expect(settings.statCounts, everyElement(0));
-    expect(countOf(tester, 6), 0);
-    expect((await AppSettings.load()).statCounts, everyElement(0));
+    expect(settings.faceCounts, everyElement(0));
+    expect(settings.sumCounts, everyElement(0));
+    expect(countOf(tester, 'faceHistogram', 6), 0);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.faceCounts, everyElement(0));
+    expect(reloaded.sumCounts, everyElement(0));
   });
 
-  testWidgets('changing the dice starts a new count', (tester) async {
+  testWidgets('changing the number of dice starts a new count', (tester) async {
     final settings = await loadSettings({
       'showStats': true,
-      'statCounts': ['1', '2', '3', '4', '5', '6'],
+      'statFaceCounts': ['1', '2', '3', '4', '5', '6'],
     });
-    settings.setDice(3, showSum: true);
-    expect(settings.statCounts, List.filled(16, 0));
-    expect(settings.statFirstValue, 3);
+    settings.diceCount = 3;
+    expect(settings.faceCounts, List.filled(6, 0));
+    expect(settings.sumCounts, List.filled(16, 0));
   });
 
   testWidgets('ignores stored counts that do not fit the dice', (tester) async {
     final s = await loadSettings({
-      'statCounts': ['1', '2', 'x', '4', '5', '6'],
+      'statFaceCounts': ['1', '2', 'x', '4', '5', '6'],
+      // 2 dice have 11 totals, not 6.
+      'statSumCounts': ['1', '2', '3', '4', '5', '6'],
     });
-    expect(s.statCounts, List.filled(6, 0));
-    final t = await loadSettings({
-      'diceCount': 2,
-      'showSum': true,
-      'statCounts': ['1', '2', '3', '4', '5', '6'],
-    });
-    expect(t.statCounts, List.filled(11, 0));
+    expect(s.faceCounts, List.filled(6, 0));
+    expect(s.sumCounts, List.filled(11, 0));
   });
 
   testWidgets('rolls are not counted while stats are off', (tester) async {
@@ -427,7 +439,8 @@ void main() {
     );
     await tester.tapAt(const Offset(400, 200));
     await tester.pumpAndSettle();
-    expect(settings.statCounts, everyElement(0));
+    expect(settings.faceCounts, everyElement(0));
+    expect(settings.sumCounts, everyElement(0));
   });
 
   // Phone portrait, phone landscape, tablet, desktop.
@@ -438,36 +451,53 @@ void main() {
     Size(1920, 1080),
   ];
   for (final screen in screens) {
-    for (var n = 1; n <= 9; n++) {
-      testWidgets('$n dice fit square on a ${screen.width.toInt()}x'
-          '${screen.height.toInt()} screen', (tester) async {
-        tester.view.physicalSize = screen;
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.reset);
-        final settings = await loadSettings({'diceCount': n});
-        await tester.pumpWidget(RollTheDiceApp(settings: settings));
-
-        expect(find.byType(Die), findsNWidgets(n));
-        final rects = [
-          for (var i = 0; i < n; i++) tester.getRect(find.byKey(Key('die$i'))),
-        ];
-        final screenRect = Offset.zero & screen;
-        for (final r in rects) {
-          expect(r.width, moreOrLessEquals(r.height), reason: 'square');
-          expect(r.width, moreOrLessEquals(rects.first.width), reason: 'same');
-          expect(r.width, greaterThan(40), reason: 'big enough to read');
-          expect(screenRect.contains(r.topLeft), isTrue);
-          expect(
-            screenRect.contains(r.bottomRight - const Offset(1, 1)),
-            isTrue,
-          );
-        }
-        for (var i = 0; i < n; i++) {
-          for (var j = i + 1; j < n; j++) {
-            expect(rects[i].overlaps(rects[j]), isFalse, reason: 'die $i/$j');
+    for (final (n, sum) in [
+      for (var n = 1; n <= 9; n++) (n, false),
+      for (var n = 1; n <= 9; n++) (n, true),
+    ]) {
+      testWidgets(
+        '$n dice${sum ? ' and their sum' : ''} fit square on a ${screen.width.toInt()}x'
+        '${screen.height.toInt()} screen',
+        (tester) async {
+          tester.view.physicalSize = screen;
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          final settings = await loadSettings({'diceCount': n, 'showSum': sum});
+          await tester.pumpWidget(RollTheDiceApp(settings: settings));
+          if (sum) {
+            final c = tester.getRect(find.byKey(const Key('sumCircle')));
+            expect(c.width, greaterThan(30), reason: 'sum readable');
+            final bottomRight = c.bottomRight - const Offset(1, 1);
+            expect((Offset.zero & screen).contains(bottomRight), isTrue);
           }
-        }
-      });
+
+          expect(find.byType(Die), findsNWidgets(n));
+          final rects = [
+            for (var i = 0; i < n; i++)
+              tester.getRect(find.byKey(Key('die$i'))),
+          ];
+          final screenRect = Offset.zero & screen;
+          for (final r in rects) {
+            expect(r.width, moreOrLessEquals(r.height), reason: 'square');
+            expect(
+              r.width,
+              moreOrLessEquals(rects.first.width),
+              reason: 'same',
+            );
+            expect(r.width, greaterThan(40), reason: 'big enough to read');
+            expect(screenRect.contains(r.topLeft), isTrue);
+            expect(
+              screenRect.contains(r.bottomRight - const Offset(1, 1)),
+              isTrue,
+            );
+          }
+          for (var i = 0; i < n; i++) {
+            for (var j = i + 1; j < n; j++) {
+              expect(rects[i].overlaps(rects[j]), isFalse, reason: 'die $i/$j');
+            }
+          }
+        },
+      );
     }
   }
 

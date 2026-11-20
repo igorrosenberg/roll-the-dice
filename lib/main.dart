@@ -82,7 +82,7 @@ class _DicePageState extends State<DicePage>
   }
 
   void _onSettingsChanged() {
-    // Rebuild for a change of count or of sum mode; reroll on a new count.
+    // Rebuild for a change of count or of the sum setting; reroll on a new count.
     setState(() {
       if (_values.length != widget.settings.diceCount) _values = _rollAll();
     });
@@ -209,21 +209,83 @@ class _DicePageState extends State<DicePage>
     );
   }
 
-  /// The "Sum of N" mode: only the total of the dice, in a white circle.
-  Widget _sumCircle(Size space) {
-    final side = max(min(space.width, space.height), 0.0);
+  /// The dice grid, with the total in a circle below it when the "Sum of
+  /// dice" setting is on. The circle takes a fifth of the height at most.
+  Widget _diceAndSum(Size space) {
+    if (!widget.settings.showSum) return _diceGrid(space);
+    final circle = max(0.0, min(min(space.height / 5, space.width), 120.0));
     final total = _values.fold(0, (a, b) => a + b);
+    // Shrink the grid's space to its rows so the circle sits right under it.
+    final n = _values.length;
+    final gridSpace = Size(space.width, max(0.0, space.height - circle - _gap));
+    final (cols, side) = diceGridFor(n, gridSpace, _gap);
+    final rows = (n / cols).ceil();
+    final gridHeight = rows * side + (rows - 1) * _gap;
     return Center(
-      child: SizedBox.square(
-        dimension: side,
-        child: _tumbling(SumCircle(total: total, dice: _values.length), 1),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: gridHeight,
+            child: _diceGrid(Size(space.width, gridHeight)),
+          ),
+          const SizedBox(height: _gap),
+          SizedBox.square(
+            dimension: circle,
+            child: SumCircle(total: total, dice: n),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The histograms under the dice: one per face, then one per total when
+  /// the sum is shown. Each takes a slice of the screen height.
+  Widget _stats(BuildContext context) {
+    final settings = widget.settings;
+    final screen = MediaQuery.sizeOf(context).height;
+    final height = settings.showSum
+        ? min(110.0, screen * 0.15)
+        : min(160.0, screen * 0.25);
+    return GestureDetector(
+      key: const Key('histogram'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _confirmResetStats,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            children: [
+              SizedBox(
+                height: height,
+                child: Histogram(
+                  key: const Key('faceHistogram'),
+                  counts: settings.faceCounts,
+                  firstValue: 1,
+                ),
+              ),
+              if (settings.showSum) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: height,
+                  child: Histogram(
+                    key: const Key('sumHistogram'),
+                    counts: settings.sumCounts,
+                    firstValue: settings.diceCount,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final stats = widget.settings.showStats;
+    final settings = widget.settings;
     return Scaffold(
       backgroundColor: Colors.green.shade800,
       body: Stack(
@@ -237,44 +299,21 @@ class _DicePageState extends State<DicePage>
                     behavior: HitTestBehavior.opaque,
                     onTapDown: (_) => _startRoll(),
                     child: SafeArea(
-                      bottom: !stats,
+                      bottom: !settings.showStats,
                       child: Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
                           child: LayoutBuilder(
-                            builder: (context, box) => widget.settings.showSum
-                                ? _sumCircle(box.biggest)
-                                : _diceGrid(box.biggest),
+                            builder: (context, box) => _diceAndSum(box.biggest),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-                // Below the dice and outside the tap area: tapping it asks
+                // Below the dice and outside the tap area: tapping here asks
                 // to reset the counts instead of rolling.
-                if (stats)
-                  GestureDetector(
-                    key: const Key('histogram'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _confirmResetStats,
-                    child: SafeArea(
-                      top: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: SizedBox(
-                          height: min(
-                            160.0,
-                            MediaQuery.sizeOf(context).height * 0.25,
-                          ),
-                          child: Histogram(
-                            counts: widget.settings.statCounts,
-                            firstValue: widget.settings.statFirstValue,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                if (settings.showStats) _stats(context),
               ],
             ),
           ),
@@ -328,7 +367,7 @@ class Histogram extends StatelessWidget {
     final total = counts.fold(0, (a, b) => a + b);
     const label = TextStyle(color: Colors.white, fontSize: 12);
     return Semantics(
-      label: 'Histogram of $total rolls. Tap to reset.',
+      label: 'Histogram of $total values. Tap to reset.',
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -380,7 +419,7 @@ class Histogram extends StatelessWidget {
   }
 }
 
-/// The total of several dice, written big in a white circle.
+/// The total of the dice, written big in a white circle.
 class SumCircle extends StatelessWidget {
   const SumCircle({super.key, required this.total, required this.dice});
 

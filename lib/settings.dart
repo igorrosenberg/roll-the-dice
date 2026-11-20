@@ -20,11 +20,10 @@ class AppSettings extends ChangeNotifier {
   static const int minDiceCount = 1;
   static const int maxDiceCount = 9;
   static const String _diceCountKey = 'diceCount';
-  static const int minSumDice = 2;
-  static const int maxSumDice = 5;
   static const String _showSumKey = 'showSum';
   static const String _showStatsKey = 'showStats';
-  static const String _statCountsKey = 'statCounts';
+  static const String _faceCountsKey = 'statFaceCounts';
+  static const String _sumCountsKey = 'statSumCounts';
 
   final SharedPreferences _prefs;
   int _delayMs;
@@ -32,7 +31,8 @@ class AppSettings extends ChangeNotifier {
   int _diceCount;
   bool _showSum;
   bool _showStats;
-  List<int> _statCounts = const [];
+  List<int> _faceCounts = const [];
+  List<int> _sumCounts = const [];
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -45,22 +45,28 @@ class AppSettings extends ChangeNotifier {
       storedCount != null && isValidDiceCount(storedCount)
           ? storedCount
           : defaultDiceCount,
-      false,
+      prefs.getBool(_showSumKey) ?? false,
       prefs.getBool(_showStatsKey) ?? false,
-    ).._showSum = prefs.getBool(_showSumKey) ?? false;
-    // Fix a stored combination that is not offered (e.g. sum of 9 dice).
-    if (!isValidSumCount(settings.diceCount)) settings._showSum = false;
-    final counts = prefs
-        .getStringList(_statCountsKey)
-        ?.map(int.tryParse)
-        .toList();
-    settings._statCounts =
-        counts != null &&
-            counts.length == settings.statBucketCount &&
-            counts.every((c) => c != null && c >= 0)
-        ? List.unmodifiable(counts.cast<int>())
-        : List.unmodifiable(List.filled(settings.statBucketCount, 0));
+    );
+    settings._faceCounts = _loadCounts(prefs, _faceCountsKey, 6);
+    settings._sumCounts = _loadCounts(
+      prefs,
+      _sumCountsKey,
+      settings.sumBucketCount,
+    );
     return settings;
+  }
+
+  /// Stored counts, or zeros when they are missing or do not fit.
+  static List<int> _loadCounts(SharedPreferences prefs, String key, int n) {
+    final counts = prefs.getStringList(key)?.map(int.tryParse).toList();
+    return List.unmodifiable(
+      counts != null &&
+              counts.length == n &&
+              counts.every((c) => c != null && c >= 0)
+          ? counts.cast<int>()
+          : List.filled(n, 0),
+    );
   }
 
   /// A delay must be a positive integer below 5000 ms.
@@ -68,9 +74,6 @@ class AppSettings extends ChangeNotifier {
 
   /// The number of dice must be 1 to 9.
   static bool isValidDiceCount(int n) => n >= minDiceCount && n <= maxDiceCount;
-
-  /// "Sum of N" is offered for 2 to 5 dice.
-  static bool isValidSumCount(int n) => n >= minSumDice && n <= maxSumDice;
 
   /// How long the dice roll before showing the result, in milliseconds.
   int get delayMs => _delayMs;
@@ -81,43 +84,44 @@ class AppSettings extends ChangeNotifier {
   /// How many dice the main page shows and rolls.
   int get diceCount => _diceCount;
 
-  /// Whether the main page shows only the total of the dice, in a circle,
-  /// instead of the dice themselves.
+  /// Whether the main page shows the total of the dice, in a circle below
+  /// them.
   bool get showSum => _showSum;
 
-  /// Whether the main page shows a histogram of the rolls under the dice.
+  /// Whether the main page shows histograms of the rolls under the dice.
   bool get showStats => _showStats;
 
-  /// How many times each bucket came up since the last reset. In sum mode
-  /// there is one bucket per possible total, from [statFirstValue] up; with
-  /// plain dice there is one per face, 1 to 6, and every die counts.
-  List<int> get statCounts => _statCounts;
+  /// How many times each face, 1 to 6, came up since the last reset. Every
+  /// die of a roll counts.
+  List<int> get faceCounts => _faceCounts;
 
-  /// The value of the first bucket: the lowest total, or face 1.
-  int get statFirstValue => _showSum ? _diceCount : 1;
+  /// How many times each total came up since the last reset: one bucket per
+  /// possible total, from [diceCount] (all ones) up to 6 × [diceCount].
+  List<int> get sumCounts => _sumCounts;
 
-  /// How many buckets the histogram has for the current dice.
-  int get statBucketCount => _showSum ? 5 * _diceCount + 1 : 6;
+  /// How many possible totals [diceCount] dice have.
+  int get sumBucketCount => 5 * _diceCount + 1;
 
-  /// Counts one finished roll of all the dice in the histogram.
+  /// Counts one finished roll of all the dice in both histograms.
   void recordRoll(List<int> values) {
-    final counts = List.of(_statCounts);
-    if (_showSum) {
-      counts[values.fold(0, (a, b) => a + b) - statFirstValue]++;
-    } else {
-      for (final v in values) {
-        counts[v - 1]++;
-      }
+    final faces = List.of(_faceCounts);
+    for (final v in values) {
+      faces[v - 1]++;
     }
-    _saveStats(counts);
+    final sums = List.of(_sumCounts);
+    sums[values.fold(0, (a, b) => a + b) - _diceCount]++;
+    _saveStats(faces, sums);
   }
 
-  /// Sets every bucket of the histogram back to 0.
-  void resetStats() => _saveStats(List.filled(statBucketCount, 0));
+  /// Sets every bucket of both histograms back to 0.
+  void resetStats() =>
+      _saveStats(List.filled(6, 0), List.filled(sumBucketCount, 0));
 
-  void _saveStats(List<int> counts) {
-    _statCounts = List.unmodifiable(counts);
-    _prefs.setStringList(_statCountsKey, [for (final c in counts) '$c']);
+  void _saveStats(List<int> faces, List<int> sums) {
+    _faceCounts = List.unmodifiable(faces);
+    _sumCounts = List.unmodifiable(sums);
+    _prefs.setStringList(_faceCountsKey, [for (final c in faces) '$c']);
+    _prefs.setStringList(_sumCountsKey, [for (final c in sums) '$c']);
     notifyListeners();
   }
 
@@ -128,20 +132,20 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sets the number of dice and whether to show their sum together, as the
-  /// settings menu offers them: 1 to 9 dice, or the sum of 2 to 5 dice.
-  void setDice(int count, {bool showSum = false}) {
-    if (!isValidDiceCount(count)) throw ArgumentError.value(count, 'count');
-    if (showSum && !isValidSumCount(count)) {
-      throw ArgumentError.value(count, 'count', 'no sum for this many dice');
-    }
-    if (count == _diceCount && showSum == _showSum) return;
-    _diceCount = count;
-    _showSum = showSum;
-    _prefs.setInt(_diceCountKey, count);
-    _prefs.setBool(_showSumKey, showSum);
-    // The buckets mean something else for other dice: start a new count.
+  set diceCount(int n) {
+    if (!isValidDiceCount(n)) throw ArgumentError.value(n, 'n');
+    if (n == _diceCount) return;
+    _diceCount = n;
+    _prefs.setInt(_diceCountKey, n);
+    // The totals change with the number of dice: start a new count.
     resetStats();
+  }
+
+  set showSum(bool on) {
+    if (on == _showSum) return;
+    _showSum = on;
+    _prefs.setBool(_showSumKey, on);
+    notifyListeners();
   }
 
   set delayMs(int ms) {
