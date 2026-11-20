@@ -60,9 +60,15 @@ class _DicePageState extends State<DicePage>
 
   late int _left = _roll();
   late int _right = _roll();
-  late final AnimationController _spin = AnimationController(vsync: this)
-    ..addListener(_onTick)
-    ..addStatusListener(_onStatus);
+  // The roll length is a user setting, so keep it even when the phone asks
+  // for shorter animations (Android "Remove animations", battery saver).
+  late final AnimationController _spin =
+      AnimationController(
+          vsync: this,
+          animationBehavior: AnimationBehavior.preserve,
+        )
+        ..addListener(_onTick)
+        ..addStatusListener(_onStatus);
   int _lastFaceChangeMs = 0;
 
   int _roll() => widget.random.nextInt(6) + 1;

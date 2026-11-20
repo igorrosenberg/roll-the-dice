@@ -141,6 +141,39 @@ void main() {
     expect(settings.delayMs, 4999);
   });
 
+  testWidgets(
+    'roll lasts the fake delay even when the phone removes animations',
+    (tester) async {
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      final settings = await loadSettings({
+        'fakeDelayMs': 2000,
+        'vibrate': true,
+      });
+      final vibrator = FakeVibrator();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DicePage(
+            random: Random(3),
+            settings: settings,
+            vibrator: vibrator,
+          ),
+        ),
+      );
+      await tester.tapAt(const Offset(300, 500));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1500));
+      expect(tester.hasRunningAnimations, isTrue, reason: 'still rolling');
+      expect(vibrator.calls, ['start 2000']);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(tester.hasRunningAnimations, isFalse, reason: 'settled');
+      expect(vibrator.calls, ['start 2000', 'stop']);
+    },
+  );
+
   for (var v = 1; v <= 6; v++) {
     testWidgets('face $v has $v pips', (tester) async {
       await tester.pumpWidget(
