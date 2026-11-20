@@ -500,4 +500,22 @@ void main() {
       expect(pipsIn(tester, 'd'), v);
     });
   }
+
+  for (final (name, size) in [
+    ('portrait', const Size(400, 800)),
+    ('landscape', const Size(800, 400)),
+    ('very wide', const Size(1600, 300)),
+  ]) {
+    testWidgets('dice stay square in $name', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(RollTheDiceApp(settings: await loadSettings()));
+      for (final k in ['die0', 'die1']) {
+        final die = tester.getSize(find.byKey(Key(k)));
+        expect(die.width, greaterThan(0));
+        expect(die.width, moreOrLessEquals(die.height), reason: k);
+      }
+    });
+  }
 }
