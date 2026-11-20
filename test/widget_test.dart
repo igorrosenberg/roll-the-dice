@@ -162,6 +162,13 @@ void main() {
       await tester.pump();
       expect(find.text('Enter a whole number from 1 to 4999'), findsOneWidget);
       expect(settings.delayMs, 200);
+      // The message sits under the row, not squeezed inside the field.
+      expect(
+        tester.getTopLeft(find.byKey(const Key('delayError'))).dy,
+        greaterThanOrEqualTo(
+          tester.getBottomLeft(find.byKey(const Key('delayField'))).dy,
+        ),
+      );
     }
     await tester.enterText(find.byKey(const Key('delayField')), '4999');
     await tester.pump();
