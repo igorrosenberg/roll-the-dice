@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'die3d.dart';
 import 'settings.dart';
 import 'settings_page.dart';
 import 'vibrator.dart';
@@ -70,6 +71,11 @@ class _DicePageState extends State<DicePage>
         ..addStatusListener(_onStatus);
   int _lastFaceChangeMs = 0;
 
+  /// For a 3D roll: the values the dice will land on, and each die's spin
+  /// (axis and total angle). Null when not rolling in 3D.
+  List<int>? _targets;
+  List<(Vec3, double)> _spins = const [];
+
   int _roll() => widget.random.nextInt(6) + 1;
 
   List<int> _rollAll() =>
@@ -103,11 +109,31 @@ class _DicePageState extends State<DicePage>
     final delay = widget.settings.delayMs;
     if (widget.settings.vibrate) widget.vibrator.start(delay);
     _lastFaceChangeMs = 0;
+    if (widget.settings.threeD) {
+      // Pick where the dice land now, then tumble each one around a random
+      // axis, two to three and a half turns, slowing down into that face.
+      _targets = _rollAll();
+      double r() => widget.random.nextDouble() * 2 - 1;
+      _spins = [
+        for (final _ in _targets!)
+          ((r(), r(), r()), 2 * pi * (2 + 1.5 * widget.random.nextDouble())),
+      ];
+    } else {
+      _targets = null;
+    }
     _spin.duration = Duration(milliseconds: delay);
     _spin.forward(from: 0);
   }
 
   void _onTick() {
+    if (_targets != null) {
+      // The value (and sum) follow the face that is currently in front.
+      for (var i = 0; i < _values.length; i++) {
+        _values[i] = Cube.frontValue(_pose(i));
+      }
+      setState(() {});
+      return;
+    }
     final elapsedMs = (_spin.value * widget.settings.delayMs).round();
     if (elapsedMs - _lastFaceChangeMs >= _faceChangeMs) {
       _lastFaceChangeMs = elapsedMs;
@@ -119,8 +145,10 @@ class _DicePageState extends State<DicePage>
   void _onStatus(AnimationStatus status) {
     if (status != AnimationStatus.completed) return;
     if (widget.settings.vibrate) widget.vibrator.stop();
+    final targets = _targets;
+    _targets = null;
     _spin.reset();
-    setState(() => _values = _rollAll());
+    setState(() => _values = targets ?? _rollAll());
   }
 
   Future<void> _openSettings() async {
@@ -143,6 +171,33 @@ class _DicePageState extends State<DicePage>
     );
   }
 
+  /// The pose of 3D die [i]: tumbling while rolling, else resting on its value.
+  Rotation _pose(int i) {
+    final targets = _targets;
+    if (targets == null || i >= targets.length) return Cube.rest(_values[i]);
+    final (axis, angle) = _spins[i];
+    final left = 1 - Curves.easeOutCubic.transform(_spin.value);
+    return Cube.tilt *
+        Rotation.axisAngle(axis, angle * left) *
+        Cube.faceToFront(targets[i]);
+  }
+
+  /// Die [i], flat or in 3D depending on the setting.
+  Widget _die(int i) {
+    if (!widget.settings.threeD) {
+      return _tumbling(
+        Die(value: _values[i], key: Key('die$i')),
+        i.isEven ? 1 : -1,
+      );
+    }
+    // A little bounce in size while it tumbles.
+    final scale = _targets == null ? 1.0 : 1 - 0.12 * sin(pi * _spin.value);
+    return Transform.scale(
+      scale: scale,
+      child: Die3D(pose: _pose(i), key: Key('die$i')),
+    );
+  }
+
   /// Space between dice.
   static const double _gap = 24;
 
@@ -161,13 +216,7 @@ class _DicePageState extends State<DicePage>
           children: [
             for (var i = start; i < end; i++) ...[
               if (i > start) const SizedBox(width: _gap),
-              SizedBox.square(
-                dimension: side,
-                child: _tumbling(
-                  Die(value: _values[i], key: Key('die$i')),
-                  i.isEven ? 1 : -1,
-                ),
-              ),
+              SizedBox.square(dimension: side, child: _die(i)),
             ],
           ],
         ),

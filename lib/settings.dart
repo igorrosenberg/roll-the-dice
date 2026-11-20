@@ -9,6 +9,7 @@ class AppSettings extends ChangeNotifier {
     this._vibrate,
     this._diceCount,
     this._showSum,
+    this._threeD,
   );
 
   static const int defaultDelayMs = 200;
@@ -20,12 +21,14 @@ class AppSettings extends ChangeNotifier {
   static const int maxDiceCount = 9;
   static const String _diceCountKey = 'diceCount';
   static const String _showSumKey = 'showSum';
+  static const String _threeDKey = 'threeD';
 
   final SharedPreferences _prefs;
   int _delayMs;
   bool _vibrate;
   int _diceCount;
   bool _showSum;
+  bool _threeD;
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,6 +42,7 @@ class AppSettings extends ChangeNotifier {
           ? storedCount
           : defaultDiceCount,
       prefs.getBool(_showSumKey) ?? false,
+      prefs.getBool(_threeDKey) ?? false,
     );
   }
 
@@ -60,6 +64,16 @@ class AppSettings extends ChangeNotifier {
   /// Whether the main page shows the total of the dice, in a circle below
   /// them.
   bool get showSum => _showSum;
+
+  /// Whether the dice are drawn as 3D cubes that tumble in 3D when rolled.
+  bool get threeD => _threeD;
+
+  set threeD(bool on) {
+    if (on == _threeD) return;
+    _threeD = on;
+    _prefs.setBool(_threeDKey, on);
+    notifyListeners();
+  }
 
   set diceCount(int n) {
     if (!isValidDiceCount(n)) throw ArgumentError.value(n, 'n');
