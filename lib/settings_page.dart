@@ -109,6 +109,13 @@ class _SettingsPageState extends State<SettingsPage> {
               onChanged: (on) => widget.settings.showSum = on,
             ),
             SwitchListTile(
+              key: const Key('threeDSwitch'),
+              title: const Text('3D'),
+              subtitle: const Text('Draw 3D dice that tumble when rolled'),
+              value: widget.settings.threeD,
+              onChanged: (on) => widget.settings.threeD = on,
+            ),
+            SwitchListTile(
               key: const Key('statsSwitch'),
               title: const Text('Stats'),
               subtitle: const Text(

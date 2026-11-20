@@ -10,6 +10,7 @@ class AppSettings extends ChangeNotifier {
     this._diceCount,
     this._showSum,
     this._showStats,
+    this._threeD,
   );
 
   static const int defaultDelayMs = 200;
@@ -24,6 +25,7 @@ class AppSettings extends ChangeNotifier {
   static const String _showStatsKey = 'showStats';
   static const String _faceCountsKey = 'statFaceCounts';
   static const String _sumCountsKey = 'statSumCounts';
+  static const String _threeDKey = 'threeD';
 
   final SharedPreferences _prefs;
   int _delayMs;
@@ -33,6 +35,7 @@ class AppSettings extends ChangeNotifier {
   bool _showStats;
   List<int> _faceCounts = const [];
   List<int> _sumCounts = const [];
+  bool _threeD;
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -47,6 +50,7 @@ class AppSettings extends ChangeNotifier {
           : defaultDiceCount,
       prefs.getBool(_showSumKey) ?? false,
       prefs.getBool(_showStatsKey) ?? false,
+      prefs.getBool(_threeDKey) ?? false,
     );
     settings._faceCounts = _loadCounts(prefs, _faceCountsKey, 6);
     settings._sumCounts = _loadCounts(
@@ -87,6 +91,16 @@ class AppSettings extends ChangeNotifier {
   /// Whether the main page shows the total of the dice, in a circle below
   /// them.
   bool get showSum => _showSum;
+
+  /// Whether the dice are drawn as 3D cubes that tumble in 3D when rolled.
+  bool get threeD => _threeD;
+
+  set threeD(bool on) {
+    if (on == _threeD) return;
+    _threeD = on;
+    _prefs.setBool(_threeDKey, on);
+    notifyListeners();
+  }
 
   /// Whether the main page shows histograms of the rolls under the dice.
   bool get showStats => _showStats;

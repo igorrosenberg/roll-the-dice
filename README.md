@@ -11,6 +11,7 @@ One to nine six-sided dice in your browser. Tap anywhere to roll.
   - **Fake delay**: 1 to 4999 ms (default 200). The dice tumble for this long before showing the result.
   - **Number of dice**: 1 to 9 (default 2), laid out as big square dice in portrait or landscape.
   - **Sum of dice**: show the total in a circle below the dice (off by default).
+  - **3D**: draw the dice as see-through blue cubes, like the app icon, that tumble in 3D for the fake delay (off by default).
   - **Vibrate**: buzz while the dice roll (off by default). Works where the browser supports vibration, mainly Android; iPhones and desktops ignore it.
 - Installable PWA ("Add to Home Screen" / "Install app") that works offline once opened.
 

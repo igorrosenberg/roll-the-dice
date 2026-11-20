@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:roll_the_dice/die3d.dart';
 import 'package:roll_the_dice/main.dart';
 import 'package:roll_the_dice/settings.dart';
 import 'package:roll_the_dice/vibrator.dart';
@@ -548,4 +549,133 @@ void main() {
       }
     });
   }
+
+  group('3D', () {
+    int shown(WidgetTester tester, String key) =>
+        tester.widget<Die3D>(find.byKey(Key(key))).value;
+
+    test('each resting pose shows its value; opposite faces add to 7', () {
+      for (var v = 1; v <= 6; v++) {
+        expect(Cube.frontValue(Cube.rest(v)), v);
+        expect(Cube.frontValue(Cube.faceToFront(v)), v);
+        final opposite = Rotation.y(pi) * Cube.faceToFront(v);
+        expect(Cube.frontValue(opposite), 7 - v);
+      }
+    });
+
+    testWidgets('is off by default; the switch turns it on and persists', (
+      tester,
+    ) async {
+      final settings = await loadSettings();
+      expect(settings.threeD, isFalse);
+      await tester.pumpWidget(
+        RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
+      );
+      expect(find.byType(Die), findsNWidgets(2));
+      expect(find.byType(Die3D), findsNothing);
+
+      await tester.tap(find.byKey(const Key('settingsButton')));
+      await tester.pumpAndSettle();
+      expect(find.text('3D'), findsOneWidget);
+      final sw = find.byKey(const Key('threeDSwitch'));
+      expect(tester.widget<SwitchListTile>(sw).value, isFalse);
+      await tester.tap(sw);
+      await tester.pump();
+      expect(tester.widget<SwitchListTile>(sw).value, isTrue);
+      expect(settings.threeD, isTrue);
+      expect((await AppSettings.load()).threeD, isTrue);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(Die), findsNothing);
+      expect(find.byType(Die3D), findsNWidgets(2));
+    });
+
+    testWidgets('dice tumble in 3D for the fake delay and land on a value', (
+      tester,
+    ) async {
+      final settings = await loadSettings({
+        'threeD': true,
+        'fakeDelayMs': 600,
+        'diceCount': 3,
+        'showSum': true,
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DicePage(random: Random(3), settings: settings),
+        ),
+      );
+      final seen = <List<int>>{};
+      for (var roll = 0; roll < 15; roll++) {
+        final rest = tester.widget<Die3D>(find.byKey(const Key('die0'))).pose;
+        await tester.tapAt(const Offset(300, 500));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.hasRunningAnimations, isTrue, reason: 'still rolling');
+        final mid = tester.widget<Die3D>(find.byKey(const Key('die0'))).pose;
+        expect(mid, isNot(rest), reason: 'turning');
+        expect(Cube.rest(shown(tester, 'die0')), isNot(mid), reason: 'tilted');
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(tester.hasRunningAnimations, isFalse, reason: 'settled');
+        final values = [for (var i = 0; i < 3; i++) shown(tester, 'die$i')];
+        for (var i = 0; i < 3; i++) {
+          expect(
+            tester.widget<Die3D>(find.byKey(Key('die$i'))).pose,
+            Cube.rest(values[i]),
+            reason: 'at rest, face forward',
+          );
+        }
+        expect(
+          tester.widget<Text>(find.byKey(const Key('sumText'))).data,
+          '${values.fold(0, (a, b) => a + b)}',
+        );
+        seen.add(values);
+      }
+      expect(seen.length, greaterThan(5));
+    });
+
+    for (final screen in const [Size(390, 844), Size(844, 390)]) {
+      for (var n = 1; n <= 9; n++) {
+        testWidgets('$n 3D dice fit square on a ${screen.width.toInt()}x'
+            '${screen.height.toInt()} screen, also mid-roll', (tester) async {
+          tester.view.physicalSize = screen;
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          final settings = await loadSettings({
+            'diceCount': n,
+            'threeD': true,
+            'showSum': true,
+          });
+          await tester.pumpWidget(RollTheDiceApp(settings: settings));
+          final screenRect = Offset.zero & screen;
+          for (final rolling in [false, true]) {
+            if (rolling) {
+              await tester.tapAt(const Offset(5, 200));
+              await tester.pump();
+              await tester.pump(const Duration(milliseconds: 90));
+            }
+            final rects = [
+              for (var i = 0; i < n; i++)
+                tester.getRect(find.byKey(Key('die$i'))),
+            ];
+            for (final r in rects) {
+              expect(r.width, moreOrLessEquals(r.height), reason: 'square');
+              expect(r.width, greaterThan(40));
+              expect(screenRect.contains(r.topLeft), isTrue);
+              expect(
+                screenRect.contains(r.bottomRight - const Offset(1, 1)),
+                isTrue,
+              );
+            }
+            for (var i = 0; i < n; i++) {
+              for (var j = i + 1; j < n; j++) {
+                expect(rects[i].overlaps(rects[j]), isFalse);
+              }
+            }
+          }
+          await tester.pumpAndSettle();
+        });
+      }
+    }
+  });
 }
