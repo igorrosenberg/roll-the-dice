@@ -1,14 +1,16 @@
 # roll-the-dice
 
-Two six-sided dice in your browser. Tap anywhere to roll.
+One to nine six-sided dice in your browser. Tap anywhere to roll.
 
 **Live:** <https://igorrosenberg.github.io/roll-the-dice/>
 
 ## Features
 
-- Tap anywhere on the screen to roll both dice.
+- Tap anywhere on the screen to roll all the dice.
 - Settings (gear icon, top right), saved in the browser:
   - **Fake delay**: 1 to 4999 ms (default 200). The dice tumble for this long before showing the result.
+  - **Number of dice**: 1 to 9 (default 2), laid out as big square dice in portrait or landscape.
+  - **Sum of dice**: show the total in a circle below the dice (off by default).
   - **Vibrate**: buzz while the dice roll (off by default). Works where the browser supports vibration, mainly Android; iPhones and desktops ignore it.
 - Installable PWA ("Add to Home Screen" / "Install app") that works offline once opened.
 
