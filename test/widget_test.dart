@@ -93,7 +93,12 @@ void main() {
     final settings = await loadSettings();
     await tester.pumpWidget(RollTheDiceApp(settings: settings));
     final gear = tester.getCenter(find.byKey(const Key('settingsButton')));
-    expect(gear.dx, lessThan(100));
+    expect(
+      gear.dx,
+      greaterThan(
+        tester.view.physicalSize.width / tester.view.devicePixelRatio - 100,
+      ),
+    );
     expect(gear.dy, lessThan(100));
 
     await tester.tap(find.byKey(const Key('settingsButton')));

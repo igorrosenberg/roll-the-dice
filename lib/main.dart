@@ -164,7 +164,7 @@ class _DicePageState extends State<DicePage>
           ),
           SafeArea(
             child: Align(
-              alignment: Alignment.topLeft,
+              alignment: Alignment.topRight,
               child: IconButton(
                 key: const Key('settingsButton'),
                 icon: const Icon(Icons.settings),
