@@ -1,5 +1,6 @@
 # Whenever main changes, merge the new main into every open PR that targets it.
-# A PR with merge conflicts is skipped and listed in the run summary; fix those by hand.
+# A PR that conflicts with main is not changed: the workflow comments on it instead
+# (once per PR head commit), so whoever watches the PR, including a Claude session, is told.
 name: Update open PRs
 
 on:
@@ -39,6 +40,12 @@ jobs:
               echo "- #$pr: already up to date" >> "$GITHUB_STEP_SUMMARY"
             else
               echo "::warning::PR #$pr could not be updated (likely a merge conflict): $out"
-              echo "- #$pr: NOT updated, resolve conflicts by hand" >> "$GITHUB_STEP_SUMMARY"
+              echo "- #$pr: NOT updated, conflicts with main" >> "$GITHUB_STEP_SUMMARY"
+              head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid)
+              marker="<!-- update-open-prs-conflict head=$head -->"
+              if ! gh pr view "$pr" --repo "$REPO" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+                gh pr comment "$pr" --repo "$REPO" --body "$marker
+          This PR conflicts with the latest \`main\` and could not be updated automatically. Please merge \`main\` into this branch and resolve the conflicts."
+              fi
             fi
           done
