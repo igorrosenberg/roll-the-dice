@@ -78,11 +78,39 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Text(
                   _error!,
                   key: const Key('delayError'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
                 ),
               ),
+            ListTile(
+              title: const Text('Number of dice'),
+              subtitle: const Text('How many dice to roll, or just their sum'),
+              trailing: DropdownButton<(int, bool)>(
+                key: const Key('diceCountField'),
+                value: (widget.settings.diceCount, widget.settings.showSum),
+                items: [
+                  for (
+                    var n = AppSettings.minDiceCount;
+                    n <= AppSettings.maxDiceCount;
+                    n++
+                  )
+                    DropdownMenuItem(value: (n, false), child: Text('$n')),
+                  for (
+                    var n = AppSettings.minSumDice;
+                    n <= AppSettings.maxSumDice;
+                    n++
+                  )
+                    DropdownMenuItem(
+                      value: (n, true),
+                      child: Text('Sum of $n'),
+                    ),
+                ],
+                onChanged: (choice) {
+                  if (choice == null) return;
+                  widget.settings.setDice(choice.$1, showSum: choice.$2);
+                },
+              ),
+            ),
             SwitchListTile(
               key: const Key('vibrateSwitch'),
               title: const Text('Vibrate'),

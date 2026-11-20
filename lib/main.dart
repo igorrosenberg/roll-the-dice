@@ -35,8 +35,8 @@ class RollTheDiceApp extends StatelessWidget {
   }
 }
 
-/// The main page: two six-sided dice. Tapping anywhere rolls both: they
-/// tumble for the "fake delay" set in settings, then show the result.
+/// The main page: 1 to 9 six-sided dice (a setting, 2 by default). Tapping
+/// anywhere rolls them all: they tumble for the "fake delay" set in settings, then show the result.
 class DicePage extends StatefulWidget {
   const DicePage({
     super.key,
@@ -58,8 +58,7 @@ class _DicePageState extends State<DicePage>
   /// How often the faces change while rolling.
   static const _faceChangeMs = 70;
 
-  late int _left = _roll();
-  late int _right = _roll();
+  late List<int> _values = _rollAll();
   // The roll length is a user setting, so keep it even when the phone asks
   // for shorter animations (Android "Remove animations", battery saver).
   late final AnimationController _spin =
@@ -73,11 +72,28 @@ class _DicePageState extends State<DicePage>
 
   int _roll() => widget.random.nextInt(6) + 1;
 
+  List<int> _rollAll() =>
+      List.generate(widget.settings.diceCount, (_) => _roll());
+
+  @override
+  void initState() {
+    super.initState();
+    widget.settings.addListener(_onSettingsChanged);
+  }
+
+  void _onSettingsChanged() {
+    // Rebuild for a change of count or of sum mode; reroll on a new count.
+    setState(() {
+      if (_values.length != widget.settings.diceCount) _values = _rollAll();
+    });
+  }
+
   bool get _rolling => _spin.isAnimating;
 
   @override
   void dispose() {
     if (_rolling) widget.vibrator.stop();
+    widget.settings.removeListener(_onSettingsChanged);
     _spin.dispose();
     super.dispose();
   }
@@ -95,8 +111,7 @@ class _DicePageState extends State<DicePage>
     final elapsedMs = (_spin.value * widget.settings.delayMs).round();
     if (elapsedMs - _lastFaceChangeMs >= _faceChangeMs) {
       _lastFaceChangeMs = elapsedMs;
-      _left = _roll();
-      _right = _roll();
+      _values = _rollAll();
     }
     setState(() {});
   }
@@ -105,10 +120,7 @@ class _DicePageState extends State<DicePage>
     if (status != AnimationStatus.completed) return;
     if (widget.settings.vibrate) widget.vibrator.stop();
     _spin.reset();
-    setState(() {
-      _left = _roll();
-      _right = _roll();
-    });
+    setState(() => _values = _rollAll());
   }
 
   Future<void> _openSettings() async {
@@ -131,6 +143,61 @@ class _DicePageState extends State<DicePage>
     );
   }
 
+  /// Space between dice.
+  static const double _gap = 24;
+
+  /// Lays the dice out in the grid of rows and columns that gives the
+  /// biggest square dice in [space], whatever its shape. An unfilled last
+  /// row is centered.
+  Widget _diceGrid(Size space) {
+    final n = _values.length;
+    final (cols, side) = diceGridFor(n, space, _gap);
+    final rows = <Widget>[];
+    for (var start = 0; start < n; start += cols) {
+      final end = min(start + cols, n);
+      rows.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = start; i < end; i++) ...[
+              if (i > start) const SizedBox(width: _gap),
+              SizedBox.square(
+                dimension: side,
+                child: _tumbling(
+                  Die(value: _values[i], key: Key('die$i')),
+                  i.isEven ? 1 : -1,
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var r = 0; r < rows.length; r++) ...[
+            if (r > 0) const SizedBox(height: _gap),
+            rows[r],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The "Sum of N" mode: only the total of the dice, in a white circle.
+  Widget _sumCircle(Size space) {
+    final side = max(min(space.width, space.height), 0.0);
+    final total = _values.fold(0, (a, b) => a + b);
+    return Center(
+      child: SizedBox.square(
+        dimension: side,
+        child: _tumbling(SumCircle(total: total, dice: _values.length), 1),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,23 +213,10 @@ class _DicePageState extends State<DicePage>
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: _tumbling(
-                            Die(value: _left, key: const Key('dieLeft')),
-                            1,
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          child: _tumbling(
-                            Die(value: _right, key: const Key('dieRight')),
-                            -1,
-                          ),
-                        ),
-                      ],
+                    child: LayoutBuilder(
+                      builder: (context, box) => widget.settings.showSum
+                          ? _sumCircle(box.biggest)
+                          : _diceGrid(box.biggest),
                     ),
                   ),
                 ),
@@ -183,6 +237,68 @@ class _DicePageState extends State<DicePage>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The column count and die side that fit [n] square dice, [gap] apart, as
+/// big as possible inside [space].
+(int, double) diceGridFor(int n, Size space, double gap) {
+  var best = (1, 0.0);
+  for (var cols = 1; cols <= n; cols++) {
+    final rows = (n / cols).ceil();
+    final side = min(
+      (space.width - gap * (cols - 1)) / cols,
+      (space.height - gap * (rows - 1)) / rows,
+    );
+    if (side > best.$2) best = (cols, side);
+  }
+  return (best.$1, max(best.$2, 0.0));
+}
+
+/// The total of several dice, written big in a white circle.
+class SumCircle extends StatelessWidget {
+  const SumCircle({super.key, required this.total, required this.dice});
+
+  final int total;
+  final int dice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Sum of $dice dice: $total',
+      excludeSemantics: true,
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: DecoratedBox(
+          key: const Key('sumCircle'),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black38,
+                blurRadius: 8,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: FractionallySizedBox(
+            widthFactor: 0.6,
+            heightFactor: 0.5,
+            child: FittedBox(
+              child: Text(
+                '$total',
+                key: const Key('sumText'),
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

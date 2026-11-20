@@ -41,7 +41,7 @@ void main() {
   testWidgets('shows two dice with 1 to 6 pips', (tester) async {
     await tester.pumpWidget(RollTheDiceApp(settings: await loadSettings()));
     expect(find.byType(Die), findsNWidgets(2));
-    for (final k in ['dieLeft', 'dieRight']) {
+    for (final k in ['die0', 'die1']) {
       expect(pipsIn(tester, k), inInclusiveRange(1, 6));
     }
   });
@@ -61,7 +61,7 @@ void main() {
       expect(tester.hasRunningAnimations, isTrue, reason: 'still rolling');
       await tester.pump(const Duration(milliseconds: 150));
       expect(tester.hasRunningAnimations, isFalse, reason: 'settled');
-      seen.add((pipsIn(tester, 'dieLeft'), pipsIn(tester, 'dieRight')));
+      seen.add((pipsIn(tester, 'die0'), pipsIn(tester, 'die1')));
     }
     expect(seen.length, greaterThan(5));
   });
@@ -208,6 +208,148 @@ void main() {
       expect(vibrator.calls, ['start 2000', 'stop']);
     },
   );
+
+  testWidgets('number of dice defaults to 2, offers 1 to 9 and persists', (
+    tester,
+  ) async {
+    final settings = await loadSettings();
+    expect(settings.diceCount, 2);
+    await tester.pumpWidget(
+      RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
+    );
+    await tester.tap(find.byKey(const Key('settingsButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('Number of dice'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('diceCountField')));
+    await tester.pumpAndSettle();
+    for (var n = 1; n <= 9; n++) {
+      expect(find.text('$n'), findsWidgets);
+    }
+    await tester.tap(find.text('7').last);
+    await tester.pumpAndSettle();
+    expect(settings.diceCount, 7);
+    expect((await AppSettings.load()).diceCount, 7);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(Die), findsNWidgets(7));
+  });
+
+  testWidgets('"Sum of 2" to "Sum of 5" show only the total in a circle', (
+    tester,
+  ) async {
+    // Tall enough for the whole menu to show without scrolling.
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final settings = await loadSettings();
+    await tester.pumpWidget(
+      RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
+    );
+    await tester.tap(find.byKey(const Key('settingsButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('diceCountField')));
+    await tester.pumpAndSettle();
+    for (var n = 2; n <= 5; n++) {
+      expect(find.text('Sum of $n'), findsWidgets);
+    }
+    expect(find.text('Sum of 1'), findsNothing);
+    expect(find.text('Sum of 6'), findsNothing);
+    await tester.tap(find.text('Sum of 3').last);
+    await tester.pumpAndSettle();
+    expect(settings.diceCount, 3);
+    expect(settings.showSum, isTrue);
+    final reloaded = await AppSettings.load();
+    expect((reloaded.diceCount, reloaded.showSum), (3, true));
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(Die), findsNothing);
+    final circle = tester.getRect(find.byKey(const Key('sumCircle')));
+    expect(circle.width, moreOrLessEquals(circle.height));
+    final totals = <int>{};
+    for (var i = 0; i < 30; i++) {
+      await tester.tapAt(const Offset(10, 400));
+      await tester.pumpAndSettle();
+      final text = tester.widget<Text>(find.byKey(const Key('sumText')));
+      totals.add(int.parse(text.data!));
+    }
+    expect(totals, everyElement(inInclusiveRange(3, 18)));
+    expect(totals.length, greaterThan(5));
+  });
+
+  testWidgets('a stored sum of more than 5 dice falls back to plain dice', (
+    tester,
+  ) async {
+    final s = await loadSettings({'diceCount': 8, 'showSum': true});
+    expect((s.diceCount, s.showSum), (8, false));
+  });
+
+  testWidgets('ignores a stored number of dice outside 1 to 9', (tester) async {
+    expect((await loadSettings({'diceCount': 0})).diceCount, 2);
+    expect((await loadSettings({'diceCount': 10})).diceCount, 2);
+  });
+
+  // Phone portrait, phone landscape, tablet, desktop.
+  const screens = [
+    Size(390, 844),
+    Size(844, 390),
+    Size(1024, 768),
+    Size(1920, 1080),
+  ];
+  for (final screen in screens) {
+    for (var n = 1; n <= 9; n++) {
+      testWidgets('$n dice fit square on a ${screen.width.toInt()}x'
+          '${screen.height.toInt()} screen', (tester) async {
+        tester.view.physicalSize = screen;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final settings = await loadSettings({'diceCount': n});
+        await tester.pumpWidget(RollTheDiceApp(settings: settings));
+
+        expect(find.byType(Die), findsNWidgets(n));
+        final rects = [
+          for (var i = 0; i < n; i++) tester.getRect(find.byKey(Key('die$i'))),
+        ];
+        final screenRect = Offset.zero & screen;
+        for (final r in rects) {
+          expect(r.width, moreOrLessEquals(r.height), reason: 'square');
+          expect(r.width, moreOrLessEquals(rects.first.width), reason: 'same');
+          expect(r.width, greaterThan(40), reason: 'big enough to read');
+          expect(screenRect.contains(r.topLeft), isTrue);
+          expect(
+            screenRect.contains(r.bottomRight - const Offset(1, 1)),
+            isTrue,
+          );
+        }
+        for (var i = 0; i < n; i++) {
+          for (var j = i + 1; j < n; j++) {
+            expect(rects[i].overlaps(rects[j]), isFalse, reason: 'die $i/$j');
+          }
+        }
+      });
+    }
+  }
+
+  testWidgets('one tap rolls all the dice', (tester) async {
+    final settings = await loadSettings({'diceCount': 9});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(7), settings: settings),
+      ),
+    );
+    final changed = List.filled(9, false);
+    for (var roll = 0; roll < 10; roll++) {
+      final before = [for (var i = 0; i < 9; i++) pipsIn(tester, 'die$i')];
+      await tester.tapAt(const Offset(10, 400));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 9; i++) {
+        if (pipsIn(tester, 'die$i') != before[i]) changed[i] = true;
+      }
+    }
+    expect(changed, everyElement(isTrue));
+  });
 
   for (var v = 1; v <= 6; v++) {
     testWidgets('face $v has $v pips', (tester) async {
