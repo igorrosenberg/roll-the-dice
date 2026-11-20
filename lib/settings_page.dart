@@ -2,11 +2,17 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'settings.dart';
+import 'vibrator.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.settings});
+  const SettingsPage({
+    super.key,
+    required this.settings,
+    required this.vibrator,
+  });
 
   final AppSettings settings;
+  final Vibrator vibrator;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -67,9 +73,16 @@ class _SettingsPageState extends State<SettingsPage> {
             SwitchListTile(
               key: const Key('vibrateSwitch'),
               title: const Text('Vibrate'),
-              subtitle: const Text('Vibrate while the dice roll'),
-              value: widget.settings.vibrate,
-              onChanged: (on) => widget.settings.vibrate = on,
+              subtitle: Text(
+                widget.vibrator.isSupported
+                    ? 'Vibrate while the dice roll'
+                    : "This browser can't vibrate. Firefox and iPhone "
+                          "browsers don't support it: try Chrome on Android.",
+              ),
+              value: widget.vibrator.isSupported && widget.settings.vibrate,
+              onChanged: widget.vibrator.isSupported
+                  ? (on) => widget.settings.vibrate = on
+                  : null,
             ),
           ],
         ),

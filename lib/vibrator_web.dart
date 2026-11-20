@@ -11,13 +11,14 @@ extension on JSObject {
   external bool _vibrate(JSNumber ms);
 }
 
-// Safari (every iPhone browser) and some desktops have no navigator.vibrate.
-bool get _supported => navigator._vibrateFn != null;
+// Safari (every iPhone browser), Firefox (since version 129) and some
+// desktops have no navigator.vibrate.
+bool get isSupported => navigator._vibrateFn != null;
 
 void vibrate(int durationMs) {
-  if (_supported) navigator._vibrate(durationMs.toJS);
+  if (isSupported) navigator._vibrate(durationMs.toJS);
 }
 
 void cancel() {
-  if (_supported) navigator._vibrate(0.toJS);
+  if (isSupported) navigator._vibrate(0.toJS);
 }
