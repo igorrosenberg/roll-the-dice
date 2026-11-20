@@ -1,0 +1,44 @@
+# Whenever main changes, merge the new main into every open PR that targets it.
+# A PR with merge conflicts is skipped and listed in the run summary; fix those by hand.
+name: Update open PRs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-open-prs
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge main into each open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          prs=$(gh pr list --repo "$REPO" --base main --state open --limit 100 \
+            --json number,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | .number')
+          if [ -z "$prs" ]; then
+            echo "No open PRs to update." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for pr in $prs; do
+            if out=$(gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" 2>&1); then
+              echo "- #$pr: updated with latest main" >> "$GITHUB_STEP_SUMMARY"
+            elif echo "$out" | grep -qi "no new commits"; then
+              echo "- #$pr: already up to date" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::warning::PR #$pr could not be updated (likely a merge conflict): $out"
+              echo "- #$pr: NOT updated, resolve conflicts by hand" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
