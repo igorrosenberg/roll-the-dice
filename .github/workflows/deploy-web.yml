@@ -1,0 +1,53 @@
+name: Deploy web
+
+# Deploys the web build (PWA) to GitHub Pages.
+# Runs only on pushes to main; other branches never build or deploy.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Served from https://<owner>.github.io/<repo>/, so the base href is
+      # the repo name. --no-web-resources-cdn keeps CanvasKit on our own
+      # origin so the offline cache covers it.
+      - name: Build web
+        run: >-
+          flutter build web --release --no-web-resources-cdn
+          --base-href "/${{ github.event.repository.name }}/"
+          --build-name=${{ github.run_number }} --build-number=${{ github.run_number }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
