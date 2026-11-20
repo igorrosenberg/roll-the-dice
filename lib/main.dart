@@ -131,6 +131,33 @@ class _DicePageState extends State<DicePage>
     );
   }
 
+  static const double _gap = 24;
+
+  /// The two dice side by side, each a square as large as the space allows,
+  /// so they stay square in portrait, landscape or any window shape.
+  Widget _dice(Size space) {
+    final size = max(0.0, min((space.width - _gap) / 2, space.height));
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: size,
+            child: _tumbling(Die(value: _left, key: const Key('dieLeft')), 1),
+          ),
+          const SizedBox(width: _gap),
+          SizedBox.square(
+            dimension: size,
+            child: _tumbling(
+              Die(value: _right, key: const Key('dieRight')),
+              -1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,23 +173,8 @@ class _DicePageState extends State<DicePage>
                 child: Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: _tumbling(
-                            Die(value: _left, key: const Key('dieLeft')),
-                            1,
-                          ),
-                        ),
-                        const SizedBox(width: 24),
-                        Expanded(
-                          child: _tumbling(
-                            Die(value: _right, key: const Key('dieRight')),
-                            -1,
-                          ),
-                        ),
-                      ],
+                    child: LayoutBuilder(
+                      builder: (context, box) => _dice(box.biggest),
                     ),
                   ),
                 ),
