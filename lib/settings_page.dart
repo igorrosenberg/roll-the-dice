@@ -55,15 +55,28 @@ class _SettingsPageState extends State<SettingsPage> {
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   textAlign: TextAlign.end,
+                  // Only the red underline shows in the field; the message
+                  // goes under the whole row, where it has room to read.
                   decoration: InputDecoration(
+                    isDense: true,
                     suffixText: 'ms',
-                    errorText: _error,
-                    errorMaxLines: 3,
+                    error: _error == null ? null : const SizedBox.shrink(),
                   ),
                   onChanged: _onDelayChanged,
                 ),
               ),
             ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  _error!,
+                  key: const Key('delayError'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
             SwitchListTile(
               key: const Key('vibrateSwitch'),
               title: const Text('Vibrate'),
