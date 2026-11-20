@@ -3,3 +3,5 @@
 void vibrate(int durationMs) {}
 
 void cancel() {}
+
+bool get isSupported => false;

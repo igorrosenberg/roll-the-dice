@@ -18,6 +18,11 @@ int pipsIn(WidgetTester tester, String dieKey) => tester
     .length;
 
 class FakeVibrator implements Vibrator {
+  FakeVibrator({this.isSupported = true});
+
+  @override
+  final bool isSupported;
+
   final calls = <String>[];
 
   @override
@@ -91,7 +96,9 @@ void main() {
     tester,
   ) async {
     final settings = await loadSettings();
-    await tester.pumpWidget(RollTheDiceApp(settings: settings));
+    await tester.pumpWidget(
+      RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
+    );
     final gear = tester.getCenter(find.byKey(const Key('settingsButton')));
     expect(
       gear.dx,
@@ -122,6 +129,27 @@ void main() {
     final reloaded = await AppSettings.load();
     expect(reloaded.delayMs, 1500);
     expect(reloaded.vibrate, isTrue);
+  });
+
+  testWidgets('vibrate switch is disabled when the browser cannot vibrate', (
+    tester,
+  ) async {
+    final settings = await loadSettings({'vibrate': true});
+    await tester.pumpWidget(
+      RollTheDiceApp(
+        settings: settings,
+        vibrator: FakeVibrator(isSupported: false),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('settingsButton')));
+    await tester.pumpAndSettle();
+
+    final vibrateSwitch = tester.widget<SwitchListTile>(
+      find.byKey(const Key('vibrateSwitch')),
+    );
+    expect(vibrateSwitch.value, isFalse);
+    expect(vibrateSwitch.onChanged, isNull);
+    expect(find.textContaining("This browser can't vibrate"), findsOneWidget);
   });
 
   testWidgets('rejects delays that are not 1 to 4999', (tester) async {

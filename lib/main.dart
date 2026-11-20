@@ -114,7 +114,8 @@ class _DicePageState extends State<DicePage>
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsPage(settings: widget.settings),
+        builder: (_) =>
+            SettingsPage(settings: widget.settings, vibrator: widget.vibrator),
       ),
     );
   }
