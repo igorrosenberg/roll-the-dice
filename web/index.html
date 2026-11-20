@@ -44,22 +44,75 @@
   <title>Roll the Dice</title>
   <meta name="theme-color" content="#2E7D32">
   <link rel="manifest" href="manifest.json">
+
+  <!--
+    Splash screen: shown straight away, while the app engine downloads,
+    and faded out when Flutter draws its first frame.
+  -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #2E7D32; }
+    #splash {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      background: #2E7D32; transition: opacity 0.3s ease-out;
+    }
+    #splash.done { opacity: 0; pointer-events: none; }
+    #splash .die {
+      width: 72px; height: 72px; padding: 10px; box-sizing: border-box;
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+      display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+      animation: splash-roll 1.2s ease-in-out infinite;
+    }
+    #splash .pip {
+      width: 12px; height: 12px; margin: auto;
+      border-radius: 50%; background: #212121;
+    }
+    #splash .pip:nth-child(2) { grid-area: 1 / 3; }
+    #splash .pip:nth-child(3) { grid-area: 2 / 2; }
+    #splash .pip:nth-child(4) { grid-area: 3 / 1; }
+    #splash .pip:nth-child(5) { grid-area: 3 / 3; }
+    @keyframes splash-roll {
+      0%, 100% { transform: rotate(-12deg); }
+      50% { transform: rotate(12deg) scale(1.06); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #splash .die { animation: none; }
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <div id="splash" aria-label="Loading">
+    <div class="die"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', () => {
+      const splash = document.getElementById('splash');
+      splash.classList.add('done');
+      setTimeout(() => splash.remove(), 400);
+    }, { once: true });
+  </script>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
+  <!--
+    The bootstrap script is inlined at build time (see web/flutter_bootstrap.js),
+    which saves a round trip before the engine starts downloading.
   -->
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    {{flutter_bootstrap_js}}
+  </script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js');
-      });
+      // Registered straight away, so its install overlaps with the app loading.
+      navigator.serviceWorker.register('sw.js');
+      // After the first frame, hand the service worker the files this page
+      // loaded, so a first visit already works offline next time.
+      window.addEventListener('flutter-first-frame', async () => {
+        const registration = await navigator.serviceWorker.ready;
+        const urls = performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .filter((url) => url.startsWith(location.origin));
+        registration.active?.postMessage({ type: 'cache', urls: [location.href, ...urls] });
+      }, { once: true });
     }
   </script>
 </body>

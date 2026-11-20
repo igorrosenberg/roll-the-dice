@@ -34,13 +34,19 @@ jobs:
         run: flutter pub get
 
       # Served from https://<owner>.github.io/<repo>/, so the base href is
-      # the repo name. --no-web-resources-cdn keeps CanvasKit on our own
-      # origin so the offline cache covers it.
+      # the repo name. --no-web-resources-cdn keeps the engine on our own
+      # origin so the offline cache covers it. --wasm serves the smaller
+      # WebAssembly build to browsers that support it (others get JavaScript).
       - name: Build web
         run: >-
-          flutter build web --release --no-web-resources-cdn
+          flutter build web --release --wasm --no-web-resources-cdn
           --base-href "/${{ github.event.repository.name }}/"
           --build-name=${{ github.run_number }} --build-number=${{ github.run_number }}
+
+      # Each release gets its own offline cache (see web/sw.js). Changing
+      # sw.js is also what tells browsers that a new release is out.
+      - name: Version the offline cache
+        run: sed -i "s/__RELEASE__/${{ github.run_number }}/" build/web/sw.js
 
       - uses: actions/configure-pages@v5
 
