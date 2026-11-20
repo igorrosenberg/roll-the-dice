@@ -44,6 +44,7 @@ Requires Flutter (stable).
 ```sh
 flutter pub get
 flutter test
+flutter test --run-skipped -t slow   # 10,000-roll chi-square check of the stats, ~8 min
 flutter run -d chrome
 flutter build web    # output in build/web/
 ```
