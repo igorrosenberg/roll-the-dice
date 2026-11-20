@@ -1,6 +1,7 @@
 # Whenever main changes, merge the new main into every open PR that targets it.
 # A PR that conflicts with main is not changed: the workflow comments on it instead
 # (once per PR head commit), so whoever watches the PR, including a Claude session, is told.
+# Any other error (permissions, rate limit, outage) is logged and fails the run, without commenting.
 name: Update open PRs
 
 on:
@@ -33,13 +34,14 @@ jobs:
             echo "No open PRs to update." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          failed=0
           for pr in $prs; do
             if out=$(gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" 2>&1); then
               echo "- #$pr: updated with latest main" >> "$GITHUB_STEP_SUMMARY"
             elif echo "$out" | grep -qi "no new commits"; then
               echo "- #$pr: already up to date" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::warning::PR #$pr could not be updated (likely a merge conflict): $out"
+            elif echo "$out" | grep -qi "merge conflict"; then
+              echo "::warning::PR #$pr conflicts with main"
               echo "- #$pr: NOT updated, conflicts with main" >> "$GITHUB_STEP_SUMMARY"
               head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid)
               marker="<!-- update-open-prs-conflict head=$head -->"
@@ -47,5 +49,10 @@ jobs:
                 gh pr comment "$pr" --repo "$REPO" --body "$marker
           This PR conflicts with the latest \`main\` and could not be updated automatically. Please merge \`main\` into this branch and resolve the conflicts."
               fi
+            else
+              echo "::error::PR #$pr could not be updated: $out"
+              echo "- #$pr: ERROR, see the run log" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
             fi
           done
+          exit $failed
