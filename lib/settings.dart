@@ -19,8 +19,6 @@ class AppSettings extends ChangeNotifier {
   static const int minDiceCount = 1;
   static const int maxDiceCount = 9;
   static const String _diceCountKey = 'diceCount';
-  static const int minSumDice = 2;
-  static const int maxSumDice = 5;
   static const String _showSumKey = 'showSum';
 
   final SharedPreferences _prefs;
@@ -33,18 +31,15 @@ class AppSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getInt(_delayKey);
     final storedCount = prefs.getInt(_diceCountKey);
-    final settings = AppSettings._(
+    return AppSettings._(
       prefs,
       stored != null && isValidDelay(stored) ? stored : defaultDelayMs,
       prefs.getBool(_vibrateKey) ?? false,
       storedCount != null && isValidDiceCount(storedCount)
           ? storedCount
           : defaultDiceCount,
-      false,
-    ).._showSum = prefs.getBool(_showSumKey) ?? false;
-    // Fix a stored combination that is not offered (e.g. sum of 9 dice).
-    if (!isValidSumCount(settings.diceCount)) settings._showSum = false;
-    return settings;
+      prefs.getBool(_showSumKey) ?? false,
+    );
   }
 
   /// A delay must be a positive integer below 5000 ms.
@@ -52,9 +47,6 @@ class AppSettings extends ChangeNotifier {
 
   /// The number of dice must be 1 to 9.
   static bool isValidDiceCount(int n) => n >= minDiceCount && n <= maxDiceCount;
-
-  /// "Sum of N" is offered for 2 to 5 dice.
-  static bool isValidSumCount(int n) => n >= minSumDice && n <= maxSumDice;
 
   /// How long the dice roll before showing the result, in milliseconds.
   int get delayMs => _delayMs;
@@ -65,22 +57,22 @@ class AppSettings extends ChangeNotifier {
   /// How many dice the main page shows and rolls.
   int get diceCount => _diceCount;
 
-  /// Whether the main page shows only the total of the dice, in a circle,
-  /// instead of the dice themselves.
+  /// Whether the main page shows the total of the dice, in a circle below
+  /// them.
   bool get showSum => _showSum;
 
-  /// Sets the number of dice and whether to show their sum together, as the
-  /// settings menu offers them: 1 to 9 dice, or the sum of 2 to 5 dice.
-  void setDice(int count, {bool showSum = false}) {
-    if (!isValidDiceCount(count)) throw ArgumentError.value(count, 'count');
-    if (showSum && !isValidSumCount(count)) {
-      throw ArgumentError.value(count, 'count', 'no sum for this many dice');
-    }
-    if (count == _diceCount && showSum == _showSum) return;
-    _diceCount = count;
-    _showSum = showSum;
-    _prefs.setInt(_diceCountKey, count);
-    _prefs.setBool(_showSumKey, showSum);
+  set diceCount(int n) {
+    if (!isValidDiceCount(n)) throw ArgumentError.value(n, 'n');
+    if (n == _diceCount) return;
+    _diceCount = n;
+    _prefs.setInt(_diceCountKey, n);
+    notifyListeners();
+  }
+
+  set showSum(bool on) {
+    if (on == _showSum) return;
+    _showSum = on;
+    _prefs.setBool(_showSumKey, on);
     notifyListeners();
   }
 

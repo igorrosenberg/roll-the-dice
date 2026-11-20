@@ -84,32 +84,29 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ListTile(
               title: const Text('Number of dice'),
-              subtitle: const Text('How many dice to roll, or just their sum'),
-              trailing: DropdownButton<(int, bool)>(
+              subtitle: const Text('How many dice to roll'),
+              trailing: DropdownButton<int>(
                 key: const Key('diceCountField'),
-                value: (widget.settings.diceCount, widget.settings.showSum),
+                value: widget.settings.diceCount,
                 items: [
                   for (
                     var n = AppSettings.minDiceCount;
                     n <= AppSettings.maxDiceCount;
                     n++
                   )
-                    DropdownMenuItem(value: (n, false), child: Text('$n')),
-                  for (
-                    var n = AppSettings.minSumDice;
-                    n <= AppSettings.maxSumDice;
-                    n++
-                  )
-                    DropdownMenuItem(
-                      value: (n, true),
-                      child: Text('Sum of $n'),
-                    ),
+                    DropdownMenuItem(value: n, child: Text('$n')),
                 ],
-                onChanged: (choice) {
-                  if (choice == null) return;
-                  widget.settings.setDice(choice.$1, showSum: choice.$2);
+                onChanged: (n) {
+                  if (n != null) widget.settings.diceCount = n;
                 },
               ),
+            ),
+            SwitchListTile(
+              key: const Key('showSumSwitch'),
+              title: const Text('Sum of dice'),
+              subtitle: const Text('Show the total in a circle below the dice'),
+              value: widget.settings.showSum,
+              onChanged: (on) => widget.settings.showSum = on,
             ),
             SwitchListTile(
               key: const Key('vibrateSwitch'),

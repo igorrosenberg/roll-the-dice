@@ -82,7 +82,7 @@ class _DicePageState extends State<DicePage>
   }
 
   void _onSettingsChanged() {
-    // Rebuild for a change of count or of sum mode; reroll on a new count.
+    // Rebuild for a change of count or of the sum setting; reroll on a new count.
     setState(() {
       if (_values.length != widget.settings.diceCount) _values = _rollAll();
     });
@@ -186,14 +186,32 @@ class _DicePageState extends State<DicePage>
     );
   }
 
-  /// The "Sum of N" mode: only the total of the dice, in a white circle.
-  Widget _sumCircle(Size space) {
-    final side = max(min(space.width, space.height), 0.0);
+  /// The dice grid, with the total in a circle below it when the "Sum of
+  /// dice" setting is on. The circle takes a fifth of the height at most.
+  Widget _diceAndSum(Size space) {
+    if (!widget.settings.showSum) return _diceGrid(space);
+    final circle = max(0.0, min(min(space.height / 5, space.width), 120.0));
     final total = _values.fold(0, (a, b) => a + b);
+    // Shrink the grid's space to its rows so the circle sits right under it.
+    final n = _values.length;
+    final gridSpace = Size(space.width, max(0.0, space.height - circle - _gap));
+    final (cols, side) = diceGridFor(n, gridSpace, _gap);
+    final rows = (n / cols).ceil();
+    final gridHeight = rows * side + (rows - 1) * _gap;
     return Center(
-      child: SizedBox.square(
-        dimension: side,
-        child: _tumbling(SumCircle(total: total, dice: _values.length), 1),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: gridHeight,
+            child: _diceGrid(Size(space.width, gridHeight)),
+          ),
+          const SizedBox(height: _gap),
+          SizedBox.square(
+            dimension: circle,
+            child: SumCircle(total: total, dice: n),
+          ),
+        ],
       ),
     );
   }
@@ -214,9 +232,7 @@ class _DicePageState extends State<DicePage>
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: LayoutBuilder(
-                      builder: (context, box) => widget.settings.showSum
-                          ? _sumCircle(box.biggest)
-                          : _diceGrid(box.biggest),
+                      builder: (context, box) => _diceAndSum(box.biggest),
                     ),
                   ),
                 ),
@@ -257,7 +273,7 @@ class _DicePageState extends State<DicePage>
   return (best.$1, max(best.$2, 0.0));
 }
 
-/// The total of several dice, written big in a white circle.
+/// The total of the dice, written big in a white circle.
 class SumCircle extends StatelessWidget {
   const SumCircle({super.key, required this.total, required this.dice});
 

@@ -236,54 +236,41 @@ void main() {
     expect(find.byType(Die), findsNWidgets(7));
   });
 
-  testWidgets('"Sum of 2" to "Sum of 5" show only the total in a circle', (
+  testWidgets('"Sum of dice" is off by default; on, a circle shows the total', (
     tester,
   ) async {
-    // Tall enough for the whole menu to show without scrolling.
-    tester.view.physicalSize = const Size(800, 1400);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final settings = await loadSettings();
+    final settings = await loadSettings({'diceCount': 3});
     await tester.pumpWidget(
       RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
     );
+    expect(find.byKey(const Key('sumCircle')), findsNothing);
+
     await tester.tap(find.byKey(const Key('settingsButton')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('diceCountField')));
-    await tester.pumpAndSettle();
-    for (var n = 2; n <= 5; n++) {
-      expect(find.text('Sum of $n'), findsWidgets);
-    }
-    expect(find.text('Sum of 1'), findsNothing);
-    expect(find.text('Sum of 6'), findsNothing);
-    await tester.tap(find.text('Sum of 3').last);
-    await tester.pumpAndSettle();
-    expect(settings.diceCount, 3);
+    expect(find.text('Sum of dice'), findsOneWidget);
+    final sumSwitch = find.byKey(const Key('showSumSwitch'));
+    expect(tester.widget<SwitchListTile>(sumSwitch).value, isFalse);
+    await tester.tap(sumSwitch);
+    await tester.pump();
     expect(settings.showSum, isTrue);
-    final reloaded = await AppSettings.load();
-    expect((reloaded.diceCount, reloaded.showSum), (3, true));
+    expect((await AppSettings.load()).showSum, isTrue);
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byType(Die), findsNothing);
+    expect(find.byType(Die), findsNWidgets(3));
     final circle = tester.getRect(find.byKey(const Key('sumCircle')));
     expect(circle.width, moreOrLessEquals(circle.height));
-    final totals = <int>{};
-    for (var i = 0; i < 30; i++) {
-      await tester.tapAt(const Offset(10, 400));
+    for (var i = 0; i < 3; i++) {
+      final die = tester.getRect(find.byKey(Key('die$i')));
+      expect(circle.top, greaterThanOrEqualTo(die.bottom), reason: 'below');
+    }
+    for (var roll = 0; roll < 10; roll++) {
+      await tester.tapAt(const Offset(10, 300));
       await tester.pumpAndSettle();
       final text = tester.widget<Text>(find.byKey(const Key('sumText')));
-      totals.add(int.parse(text.data!));
+      final dice = [for (var i = 0; i < 3; i++) pipsIn(tester, 'die$i')];
+      expect(int.parse(text.data!), dice.reduce((a, b) => a + b));
     }
-    expect(totals, everyElement(inInclusiveRange(3, 18)));
-    expect(totals.length, greaterThan(5));
-  });
-
-  testWidgets('a stored sum of more than 5 dice falls back to plain dice', (
-    tester,
-  ) async {
-    final s = await loadSettings({'diceCount': 8, 'showSum': true});
-    expect((s.diceCount, s.showSum), (8, false));
   });
 
   testWidgets('ignores a stored number of dice outside 1 to 9', (tester) async {
@@ -299,36 +286,53 @@ void main() {
     Size(1920, 1080),
   ];
   for (final screen in screens) {
-    for (var n = 1; n <= 9; n++) {
-      testWidgets('$n dice fit square on a ${screen.width.toInt()}x'
-          '${screen.height.toInt()} screen', (tester) async {
-        tester.view.physicalSize = screen;
-        tester.view.devicePixelRatio = 1;
-        addTearDown(tester.view.reset);
-        final settings = await loadSettings({'diceCount': n});
-        await tester.pumpWidget(RollTheDiceApp(settings: settings));
-
-        expect(find.byType(Die), findsNWidgets(n));
-        final rects = [
-          for (var i = 0; i < n; i++) tester.getRect(find.byKey(Key('die$i'))),
-        ];
-        final screenRect = Offset.zero & screen;
-        for (final r in rects) {
-          expect(r.width, moreOrLessEquals(r.height), reason: 'square');
-          expect(r.width, moreOrLessEquals(rects.first.width), reason: 'same');
-          expect(r.width, greaterThan(40), reason: 'big enough to read');
-          expect(screenRect.contains(r.topLeft), isTrue);
-          expect(
-            screenRect.contains(r.bottomRight - const Offset(1, 1)),
-            isTrue,
-          );
-        }
-        for (var i = 0; i < n; i++) {
-          for (var j = i + 1; j < n; j++) {
-            expect(rects[i].overlaps(rects[j]), isFalse, reason: 'die $i/$j');
+    for (final (n, sum) in [
+      for (var n = 1; n <= 9; n++) (n, false),
+      for (var n = 1; n <= 9; n++) (n, true),
+    ]) {
+      testWidgets(
+        '$n dice${sum ? ' and their sum' : ''} fit square on a ${screen.width.toInt()}x'
+        '${screen.height.toInt()} screen',
+        (tester) async {
+          tester.view.physicalSize = screen;
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          final settings = await loadSettings({'diceCount': n, 'showSum': sum});
+          await tester.pumpWidget(RollTheDiceApp(settings: settings));
+          if (sum) {
+            final c = tester.getRect(find.byKey(const Key('sumCircle')));
+            expect(c.width, greaterThan(30), reason: 'sum readable');
+            final bottomRight = c.bottomRight - const Offset(1, 1);
+            expect((Offset.zero & screen).contains(bottomRight), isTrue);
           }
-        }
-      });
+
+          expect(find.byType(Die), findsNWidgets(n));
+          final rects = [
+            for (var i = 0; i < n; i++)
+              tester.getRect(find.byKey(Key('die$i'))),
+          ];
+          final screenRect = Offset.zero & screen;
+          for (final r in rects) {
+            expect(r.width, moreOrLessEquals(r.height), reason: 'square');
+            expect(
+              r.width,
+              moreOrLessEquals(rects.first.width),
+              reason: 'same',
+            );
+            expect(r.width, greaterThan(40), reason: 'big enough to read');
+            expect(screenRect.contains(r.topLeft), isTrue);
+            expect(
+              screenRect.contains(r.bottomRight - const Offset(1, 1)),
+              isTrue,
+            );
+          }
+          for (var i = 0; i < n; i++) {
+            for (var j = i + 1; j < n; j++) {
+              expect(rects[i].overlaps(rects[j]), isFalse, reason: 'die $i/$j');
+            }
+          }
+        },
+      );
     }
   }
 
