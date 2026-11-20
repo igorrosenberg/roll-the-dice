@@ -9,6 +9,7 @@ class AppSettings extends ChangeNotifier {
     this._vibrate,
     this._diceCount,
     this._showSum,
+    this._showStats,
   );
 
   static const int defaultDelayMs = 200;
@@ -22,12 +23,16 @@ class AppSettings extends ChangeNotifier {
   static const int minSumDice = 2;
   static const int maxSumDice = 5;
   static const String _showSumKey = 'showSum';
+  static const String _showStatsKey = 'showStats';
+  static const String _statCountsKey = 'statCounts';
 
   final SharedPreferences _prefs;
   int _delayMs;
   bool _vibrate;
   int _diceCount;
   bool _showSum;
+  bool _showStats;
+  List<int> _statCounts = const [];
 
   static Future<AppSettings> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -41,9 +46,20 @@ class AppSettings extends ChangeNotifier {
           ? storedCount
           : defaultDiceCount,
       false,
+      prefs.getBool(_showStatsKey) ?? false,
     ).._showSum = prefs.getBool(_showSumKey) ?? false;
     // Fix a stored combination that is not offered (e.g. sum of 9 dice).
     if (!isValidSumCount(settings.diceCount)) settings._showSum = false;
+    final counts = prefs
+        .getStringList(_statCountsKey)
+        ?.map(int.tryParse)
+        .toList();
+    settings._statCounts =
+        counts != null &&
+            counts.length == settings.statBucketCount &&
+            counts.every((c) => c != null && c >= 0)
+        ? List.unmodifiable(counts.cast<int>())
+        : List.unmodifiable(List.filled(settings.statBucketCount, 0));
     return settings;
   }
 
@@ -69,6 +85,49 @@ class AppSettings extends ChangeNotifier {
   /// instead of the dice themselves.
   bool get showSum => _showSum;
 
+  /// Whether the main page shows a histogram of the rolls under the dice.
+  bool get showStats => _showStats;
+
+  /// How many times each bucket came up since the last reset. In sum mode
+  /// there is one bucket per possible total, from [statFirstValue] up; with
+  /// plain dice there is one per face, 1 to 6, and every die counts.
+  List<int> get statCounts => _statCounts;
+
+  /// The value of the first bucket: the lowest total, or face 1.
+  int get statFirstValue => _showSum ? _diceCount : 1;
+
+  /// How many buckets the histogram has for the current dice.
+  int get statBucketCount => _showSum ? 5 * _diceCount + 1 : 6;
+
+  /// Counts one finished roll of all the dice in the histogram.
+  void recordRoll(List<int> values) {
+    final counts = List.of(_statCounts);
+    if (_showSum) {
+      counts[values.fold(0, (a, b) => a + b) - statFirstValue]++;
+    } else {
+      for (final v in values) {
+        counts[v - 1]++;
+      }
+    }
+    _saveStats(counts);
+  }
+
+  /// Sets every bucket of the histogram back to 0.
+  void resetStats() => _saveStats(List.filled(statBucketCount, 0));
+
+  void _saveStats(List<int> counts) {
+    _statCounts = List.unmodifiable(counts);
+    _prefs.setStringList(_statCountsKey, [for (final c in counts) '$c']);
+    notifyListeners();
+  }
+
+  set showStats(bool on) {
+    if (on == _showStats) return;
+    _showStats = on;
+    _prefs.setBool(_showStatsKey, on);
+    notifyListeners();
+  }
+
   /// Sets the number of dice and whether to show their sum together, as the
   /// settings menu offers them: 1 to 9 dice, or the sum of 2 to 5 dice.
   void setDice(int count, {bool showSum = false}) {
@@ -81,7 +140,8 @@ class AppSettings extends ChangeNotifier {
     _showSum = showSum;
     _prefs.setInt(_diceCountKey, count);
     _prefs.setBool(_showSumKey, showSum);
-    notifyListeners();
+    // The buckets mean something else for other dice: start a new count.
+    resetStats();
   }
 
   set delayMs(int ms) {

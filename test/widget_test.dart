@@ -291,6 +291,145 @@ void main() {
     expect((await loadSettings({'diceCount': 10})).diceCount, 2);
   });
 
+  int countOf(WidgetTester tester, int value) =>
+      int.parse(tester.widget<Text>(find.byKey(Key('count$value'))).data!);
+
+  testWidgets('stats are off by default; the switch shows and persists them', (
+    tester,
+  ) async {
+    final settings = await loadSettings();
+    expect(settings.showStats, isFalse);
+    await tester.pumpWidget(
+      RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
+    );
+    expect(find.byKey(const Key('histogram')), findsNothing);
+    await tester.tap(find.byKey(const Key('settingsButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('statsSwitch')));
+    await tester.pumpAndSettle();
+    expect(settings.showStats, isTrue);
+    expect((await AppSettings.load()).showStats, isTrue);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('histogram')), findsOneWidget);
+    for (var v = 1; v <= 6; v++) {
+      expect(countOf(tester, v), 0);
+    }
+  });
+
+  testWidgets('plain dice: one bucket per face, every die counts', (
+    tester,
+  ) async {
+    final settings = await loadSettings({'showStats': true, 'diceCount': 3});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(7), settings: settings),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.tapAt(const Offset(400, 200));
+      await tester.pumpAndSettle();
+    }
+    expect(settings.statCounts.length, 6);
+    expect(settings.statCounts.fold(0, (a, b) => a + b), 30);
+    for (var v = 1; v <= 6; v++) {
+      expect(countOf(tester, v), settings.statCounts[v - 1]);
+    }
+    // The counts survive a reload.
+    expect((await AppSettings.load()).statCounts, settings.statCounts);
+  });
+
+  testWidgets('sum mode: one bucket per possible total', (tester) async {
+    final settings = await loadSettings({
+      'showStats': true,
+      'diceCount': 2,
+      'showSum': true,
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(3), settings: settings),
+      ),
+    );
+    expect(settings.statCounts.length, 11);
+    expect(find.byKey(const Key('count2')), findsOneWidget);
+    expect(find.byKey(const Key('count12')), findsOneWidget);
+    expect(find.byKey(const Key('count1')), findsNothing);
+    expect(find.byKey(const Key('count13')), findsNothing);
+    await tester.tapAt(const Offset(400, 200));
+    await tester.pumpAndSettle();
+    final total = int.parse(
+      tester.widget<Text>(find.byKey(const Key('sumText'))).data!,
+    );
+    expect(countOf(tester, total), 1);
+    expect(settings.statCounts.fold(0, (a, b) => a + b), 1);
+  });
+
+  testWidgets('tapping the histogram asks to reset instead of rolling', (
+    tester,
+  ) async {
+    final settings = await loadSettings({
+      'showStats': true,
+      'statCounts': ['1', '2', '3', '4', '5', '6'],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(1), settings: settings),
+      ),
+    );
+    expect(countOf(tester, 6), 6);
+
+    await tester.tap(find.byKey(const Key('histogram')));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset histogram?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('resetNo')));
+    await tester.pumpAndSettle();
+    // No roll happened and nothing was reset.
+    expect(settings.statCounts, [1, 2, 3, 4, 5, 6]);
+
+    await tester.tap(find.byKey(const Key('histogram')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('resetYes')));
+    await tester.pumpAndSettle();
+    expect(settings.statCounts, everyElement(0));
+    expect(countOf(tester, 6), 0);
+    expect((await AppSettings.load()).statCounts, everyElement(0));
+  });
+
+  testWidgets('changing the dice starts a new count', (tester) async {
+    final settings = await loadSettings({
+      'showStats': true,
+      'statCounts': ['1', '2', '3', '4', '5', '6'],
+    });
+    settings.setDice(3, showSum: true);
+    expect(settings.statCounts, List.filled(16, 0));
+    expect(settings.statFirstValue, 3);
+  });
+
+  testWidgets('ignores stored counts that do not fit the dice', (tester) async {
+    final s = await loadSettings({
+      'statCounts': ['1', '2', 'x', '4', '5', '6'],
+    });
+    expect(s.statCounts, List.filled(6, 0));
+    final t = await loadSettings({
+      'diceCount': 2,
+      'showSum': true,
+      'statCounts': ['1', '2', '3', '4', '5', '6'],
+    });
+    expect(t.statCounts, List.filled(11, 0));
+  });
+
+  testWidgets('rolls are not counted while stats are off', (tester) async {
+    final settings = await loadSettings();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(2), settings: settings),
+      ),
+    );
+    await tester.tapAt(const Offset(400, 200));
+    await tester.pumpAndSettle();
+    expect(settings.statCounts, everyElement(0));
+  });
+
   // Phone portrait, phone landscape, tablet, desktop.
   const screens = [
     Size(390, 844),
