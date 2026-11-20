@@ -1,0 +1,3 @@
+tags:
+  slow:
+    skip: "Slow (about 8 minutes). Run with: flutter test --run-skipped -t slow"
