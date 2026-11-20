@@ -109,6 +109,16 @@ class _SettingsPageState extends State<SettingsPage> {
               onChanged: (on) => widget.settings.showSum = on,
             ),
             SwitchListTile(
+              key: const Key('statsSwitch'),
+              title: const Text('Stats'),
+              subtitle: const Text(
+                'Show histograms of the rolls under the dice: one per face, '
+                'and one per total when "Sum of dice" is on. Tap to reset',
+              ),
+              value: widget.settings.showStats,
+              onChanged: (on) => widget.settings.showStats = on,
+            ),
+            SwitchListTile(
               key: const Key('vibrateSwitch'),
               title: const Text('Vibrate'),
               subtitle: Text(

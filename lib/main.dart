@@ -121,6 +121,29 @@ class _DicePageState extends State<DicePage>
     if (widget.settings.vibrate) widget.vibrator.stop();
     _spin.reset();
     setState(() => _values = _rollAll());
+    if (widget.settings.showStats) widget.settings.recordRoll(_values);
+  }
+
+  Future<void> _confirmResetStats() async {
+    final reset = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset histogram?'),
+        actions: [
+          TextButton(
+            key: const Key('resetNo'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            key: const Key('resetYes'),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+    if (reset == true) widget.settings.resetStats();
   }
 
   Future<void> _openSettings() async {
@@ -216,27 +239,82 @@ class _DicePageState extends State<DicePage>
     );
   }
 
+  /// The histograms under the dice: one per face, then one per total when
+  /// the sum is shown. Each takes a slice of the screen height.
+  Widget _stats(BuildContext context) {
+    final settings = widget.settings;
+    final screen = MediaQuery.sizeOf(context).height;
+    final height = settings.showSum
+        ? min(110.0, screen * 0.15)
+        : min(160.0, screen * 0.25);
+    return GestureDetector(
+      key: const Key('histogram'),
+      behavior: HitTestBehavior.opaque,
+      onTap: _confirmResetStats,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            children: [
+              SizedBox(
+                height: height,
+                child: Histogram(
+                  key: const Key('faceHistogram'),
+                  counts: settings.faceCounts,
+                  firstValue: 1,
+                ),
+              ),
+              if (settings.showSum) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: height,
+                  child: Histogram(
+                    key: const Key('sumHistogram'),
+                    counts: settings.sumCounts,
+                    firstValue: settings.diceCount,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final settings = widget.settings;
     return Scaffold(
       backgroundColor: Colors.green.shade800,
       body: Stack(
         children: [
           Positioned.fill(
-            child: GestureDetector(
-              key: const Key('tapArea'),
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (_) => _startRoll(),
-              child: SafeArea(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: LayoutBuilder(
-                      builder: (context, box) => _diceAndSum(box.biggest),
+            child: Column(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('tapArea'),
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (_) => _startRoll(),
+                    child: SafeArea(
+                      bottom: !settings.showStats,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: LayoutBuilder(
+                            builder: (context, box) => _diceAndSum(box.biggest),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+                // Below the dice and outside the tap area: tapping here asks
+                // to reset the counts instead of rolling.
+                if (settings.showStats) _stats(context),
+              ],
             ),
           ),
           SafeArea(
@@ -271,6 +349,74 @@ class _DicePageState extends State<DicePage>
     if (side > best.$2) best = (cols, side);
   }
   return (best.$1, max(best.$2, 0.0));
+}
+
+/// A bar chart of how often each value came up: one bar per bucket, its
+/// count above and its value below. Bars scale to the most common bucket.
+class Histogram extends StatelessWidget {
+  const Histogram({super.key, required this.counts, required this.firstValue});
+
+  final List<int> counts;
+
+  /// The value of the first bucket; the next ones go up by 1.
+  final int firstValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final most = counts.fold(0, max);
+    final total = counts.fold(0, (a, b) => a + b);
+    const label = TextStyle(color: Colors.white, fontSize: 12);
+    return Semantics(
+      label: 'Histogram of $total values. Tap to reset.',
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < counts.length; i++)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          FittedBox(
+                            child: Text(
+                              '${counts[i]}',
+                              key: Key('count${firstValue + i}'),
+                              style: label,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Flexible(
+                            child: FractionallySizedBox(
+                              heightFactor: most == 0 ? 0 : counts[i] / most,
+                              child: Container(
+                                key: Key('bar${firstValue + i}'),
+                                width: double.infinity,
+                                decoration: const BoxDecoration(
+                                  color: Colors.white70,
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(3),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    FittedBox(child: Text('${firstValue + i}', style: label)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// The total of the dice, written big in a white circle.

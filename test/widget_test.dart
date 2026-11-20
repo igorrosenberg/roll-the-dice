@@ -278,6 +278,171 @@ void main() {
     expect((await loadSettings({'diceCount': 10})).diceCount, 2);
   });
 
+  int countOf(WidgetTester tester, String histogram, int value) => int.parse(
+    tester
+        .widget<Text>(
+          find.descendant(
+            of: find.byKey(Key(histogram)),
+            matching: find.byKey(Key('count$value')),
+          ),
+        )
+        .data!,
+  );
+
+  testWidgets('stats are off by default; the switch shows and persists them', (
+    tester,
+  ) async {
+    final settings = await loadSettings();
+    expect(settings.showStats, isFalse);
+    await tester.pumpWidget(
+      RollTheDiceApp(settings: settings, vibrator: FakeVibrator()),
+    );
+    expect(find.byKey(const Key('histogram')), findsNothing);
+    await tester.tap(find.byKey(const Key('settingsButton')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('statsSwitch')));
+    await tester.pumpAndSettle();
+    expect(settings.showStats, isTrue);
+    expect((await AppSettings.load()).showStats, isTrue);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('faceHistogram')), findsOneWidget);
+    // The per-total histogram only shows with "Sum of dice".
+    expect(find.byKey(const Key('sumHistogram')), findsNothing);
+    for (var v = 1; v <= 6; v++) {
+      expect(countOf(tester, 'faceHistogram', v), 0);
+    }
+  });
+
+  testWidgets('face histogram: one bucket per face, every die counts', (
+    tester,
+  ) async {
+    final settings = await loadSettings({'showStats': true, 'diceCount': 3});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(7), settings: settings),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.tapAt(const Offset(400, 200));
+      await tester.pumpAndSettle();
+    }
+    expect(settings.faceCounts.length, 6);
+    expect(settings.faceCounts.fold(0, (a, b) => a + b), 30);
+    for (var v = 1; v <= 6; v++) {
+      expect(countOf(tester, 'faceHistogram', v), settings.faceCounts[v - 1]);
+    }
+    // Totals are counted too, ready for when the sum is switched on.
+    expect(settings.sumCounts.fold(0, (a, b) => a + b), 10);
+    // The counts survive a reload.
+    final reloaded = await AppSettings.load();
+    expect(reloaded.faceCounts, settings.faceCounts);
+    expect(reloaded.sumCounts, settings.sumCounts);
+  });
+
+  testWidgets('with the sum on, a second histogram has one bucket per total', (
+    tester,
+  ) async {
+    final settings = await loadSettings({
+      'showStats': true,
+      'diceCount': 2,
+      'showSum': true,
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(3), settings: settings),
+      ),
+    );
+    expect(find.byKey(const Key('faceHistogram')), findsOneWidget);
+    expect(settings.sumCounts.length, 11);
+    Finder sumBucket(int v) => find.descendant(
+      of: find.byKey(const Key('sumHistogram')),
+      matching: find.byKey(Key('count$v')),
+    );
+    expect(sumBucket(2), findsOneWidget);
+    expect(sumBucket(12), findsOneWidget);
+    expect(sumBucket(1), findsNothing);
+    expect(sumBucket(13), findsNothing);
+    await tester.tapAt(const Offset(400, 100));
+    await tester.pumpAndSettle();
+    final total = int.parse(
+      tester.widget<Text>(find.byKey(const Key('sumText'))).data!,
+    );
+    expect(countOf(tester, 'sumHistogram', total), 1);
+    expect(settings.sumCounts.fold(0, (a, b) => a + b), 1);
+    expect(settings.faceCounts.fold(0, (a, b) => a + b), 2);
+  });
+
+  testWidgets('tapping the histograms asks to reset instead of rolling', (
+    tester,
+  ) async {
+    final settings = await loadSettings({
+      'showStats': true,
+      'showSum': true,
+      'statFaceCounts': ['1', '2', '3', '4', '5', '6'],
+      'statSumCounts': [for (var i = 0; i < 11; i++) '1'],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(1), settings: settings),
+      ),
+    );
+    expect(countOf(tester, 'faceHistogram', 6), 6);
+
+    await tester.tap(find.byKey(const Key('sumHistogram')));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset histogram?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('resetNo')));
+    await tester.pumpAndSettle();
+    // No roll happened and nothing was reset.
+    expect(settings.faceCounts, [1, 2, 3, 4, 5, 6]);
+    expect(settings.sumCounts, List.filled(11, 1));
+
+    await tester.tap(find.byKey(const Key('histogram')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('resetYes')));
+    await tester.pumpAndSettle();
+    expect(settings.faceCounts, everyElement(0));
+    expect(settings.sumCounts, everyElement(0));
+    expect(countOf(tester, 'faceHistogram', 6), 0);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.faceCounts, everyElement(0));
+    expect(reloaded.sumCounts, everyElement(0));
+  });
+
+  testWidgets('changing the number of dice starts a new count', (tester) async {
+    final settings = await loadSettings({
+      'showStats': true,
+      'statFaceCounts': ['1', '2', '3', '4', '5', '6'],
+    });
+    settings.diceCount = 3;
+    expect(settings.faceCounts, List.filled(6, 0));
+    expect(settings.sumCounts, List.filled(16, 0));
+  });
+
+  testWidgets('ignores stored counts that do not fit the dice', (tester) async {
+    final s = await loadSettings({
+      'statFaceCounts': ['1', '2', 'x', '4', '5', '6'],
+      // 2 dice have 11 totals, not 6.
+      'statSumCounts': ['1', '2', '3', '4', '5', '6'],
+    });
+    expect(s.faceCounts, List.filled(6, 0));
+    expect(s.sumCounts, List.filled(11, 0));
+  });
+
+  testWidgets('rolls are not counted while stats are off', (tester) async {
+    final settings = await loadSettings();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DicePage(random: Random(2), settings: settings),
+      ),
+    );
+    await tester.tapAt(const Offset(400, 200));
+    await tester.pumpAndSettle();
+    expect(settings.faceCounts, everyElement(0));
+    expect(settings.sumCounts, everyElement(0));
+  });
+
   // Phone portrait, phone landscape, tablet, desktop.
   const screens = [
     Size(390, 844),
