@@ -1,4 +1,4 @@
-import 'vibrator_native.dart'
+import 'vibrator_stub.dart'
     if (dart.library.js_interop) 'vibrator_web.dart'
     as platform;
 
@@ -8,9 +8,8 @@ abstract class Vibrator {
   void stop();
 }
 
-/// Vibrates through the `vibration` plugin on Android, and through the
-/// browser's Vibration API on the web (Android browsers only: iPhones and
-/// desktops ignore it).
+/// Vibrates through the browser's Vibration API (Android browsers only:
+/// iPhones and desktops ignore it).
 class DeviceVibrator implements Vibrator {
   const DeviceVibrator();
 
